@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "ผู้ช่วยครูแบบ multi-agent: ตรวจงาน ร่างแผนการสอน ร่างรายงาน — ครูอนุมัติทุกครั้ง",
     start_url: "/",
     display: "standalone",
-    background_color: "#f4f6f9",
-    theme_color: "#0f6f5c",
+    background_color: "#f5f8fc",
+    theme_color: "#2563eb",
     icons: [
       {
         src: "/icon.svg",
