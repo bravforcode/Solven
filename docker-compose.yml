@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      - SOLVEN_API_TOKEN=${SOLVEN_API_TOKEN:-dev-secret-change-me}
+      - SOLVEN_DB_PATH=/data/solven.db
+      - SOLVEN_CORS_ORIGINS=http://localhost:3000
+      - SOLVEN_LLM=mock
+    volumes:
+      - solven-data:/data
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - NEXT_PUBLIC_SOLVEN_API_URL=http://localhost:8000
+      - SOLVEN_API_TOKEN=${SOLVEN_API_TOKEN:-dev-secret-change-me}
+    ports:
+      - "3000:3000"
+
+volumes:
+  solven-data:

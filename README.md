@@ -49,15 +49,26 @@ docs/                problem brief, pitch-deck outline, target architecture
 ## Getting Started
 
 ```bash
-# frontend
-cd frontend
-npm install
-npm run dev          # http://localhost:3000
-
 # backend
 cd backend
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+python -m app.migrate                 # schema + migrations
+SOLVEN_LLM=mock uvicorn app.main:app --reload --port 8000
+
+# frontend (อีกระบบปฏิบัติการ/terminal)
+cd frontend
+npm install
+npm run dev          # http://localhost:3000
 ```
+
+> API ทุกตัวของ backend ต้องใช้ Bearer token (`SOLVEN_API_TOKEN`) — ดู `backend/.env.example`
+> และ `docs/DEPLOYMENT.md` สำหรับ production runbook · `docker compose up --build` สำหรับ pilot
+
+## Production readiness
+
+- ✅ Auth (Bearer), rate limiting, security headers, request IDs, structured logging
+- ✅ Config ทั้งหมดผ่าน env (`SOLVEN_*`), migrations runner (`app/migrate.py`), input limits
+- ✅ CI (`pytest` 32 tests + lint/typecheck/build), Docker + docker-compose
+- 📖 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) · [SECURITY.md](SECURITY.md)

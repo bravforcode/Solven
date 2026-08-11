@@ -8,6 +8,10 @@ import { AgentType, Draft } from "./types";
 const API_URL =
   process.env.NEXT_PUBLIC_SOLVEN_API_URL ?? "http://localhost:8000";
 
+// Bearer token for the backend — server-side only (Next.js API routes).
+// Never shipped to the browser.
+const API_TOKEN = process.env.SOLVEN_API_TOKEN ?? "";
+
 export interface RunResult {
   draft: Draft;
   engine: "backend" | "mock";
@@ -22,7 +26,10 @@ export async function runAgent(
   try {
     const res = await fetch(`${API_URL}/api/coordinator`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+      },
       signal: AbortSignal.timeout(30000),
       body: JSON.stringify({ agent, input, rubric: rubric || undefined }),
     });

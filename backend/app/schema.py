@@ -8,8 +8,8 @@ DraftStatus = Literal["pending", "approved", "rejected"]
 
 class TaskRequest(BaseModel):
     agent: AgentType
-    input: str = Field(min_length=1)
-    rubric: Optional[str] = None  # grading only: teacher-defined criteria
+    input: str = Field(min_length=1, max_length=50_000)
+    rubric: Optional[str] = Field(default=None, max_length=10_000)  # grading only
 
 
 class DraftOut(BaseModel):
