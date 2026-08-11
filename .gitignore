@@ -10,3 +10,4 @@ backend/data/
 dist/
 build/
 *.log
+*.tsbuildinfo
