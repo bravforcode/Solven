@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { runAgent } from "@/lib/agents";
+import { runAgent } from "@/lib/backend";
 import { addDraft } from "@/lib/store";
-import { AgentType, Draft } from "@/lib/types";
+import { AgentType } from "@/lib/types";
 
 const VALID_AGENTS: AgentType[] = ["grading", "lesson-plan", "reporting"];
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { agent, input } = body as { agent: AgentType; input: string };
+  const { agent, input, rubric } = body as {
+    agent: AgentType;
+    input: string;
+    rubric?: string;
+  };
 
   if (!VALID_AGENTS.includes(agent)) {
     return NextResponse.json({ error: "unknown agent" }, { status: 400 });
@@ -17,15 +21,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "input required" }, { status: 400 });
   }
 
-  const draft: Draft = {
-    id: randomUUID(),
-    agent,
-    input,
-    output: runAgent(agent, input),
-    status: "pending",
-    createdAt: new Date().toISOString(),
+  const result = await runAgent(agent, input.trim(), rubric?.trim() || undefined);
+  const draft = {
+    ...result.draft,
+    id: result.engine === "backend" ? result.draft.id : randomUUID(),
   };
-  addDraft(draft);
+  addDraft({ ...draft, warnings: draft.warnings ?? [] });
 
-  return NextResponse.json(draft);
+  return NextResponse.json({
+    ...draft,
+    engine: result.engine,
+    engineError: result.error ?? null,
+  });
 }

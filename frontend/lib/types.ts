@@ -8,6 +8,7 @@ export interface Draft {
   input: string;
   output: string;
   status: DraftStatus;
+  warnings: string[];
   createdAt: string;
 }
 

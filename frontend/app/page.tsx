@@ -5,11 +5,20 @@ import { AGENT_LABEL, AgentType, Draft } from "@/lib/types";
 
 const AGENT_OPTIONS: AgentType[] = ["grading", "lesson-plan", "reporting"];
 
+const AGENT_HINTS: Record<AgentType, string> = {
+  grading: "วางคำตอบ/ผลงานนักเรียน + rubric ที่ครูตั้งเอง",
+  "lesson-plan": "หัวข้อบทเรียน / ตัวชี้วัด / จำนวนนักเรียน",
+  reporting: "ข้อมูลความก้าวหน้าที่จะสรุปส่งผู้ปกครอง/ผู้บริหาร",
+};
+
 export default function Home() {
   const [agent, setAgent] = useState<AgentType>("grading");
   const [input, setInput] = useState("");
+  const [rubric, setRubric] = useState("");
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [engine, setEngine] = useState<string>("");
+  const [error, setError] = useState<string>("");
 
   async function loadDrafts() {
     const res = await fetch("/api/drafts");
@@ -24,14 +33,25 @@ export default function Home() {
     e.preventDefault();
     if (!input.trim()) return;
     setSubmitting(true);
+    setError("");
+    setEngine("");
     try {
-      await fetch("/api/coordinator", {
+      const res = await fetch("/api/coordinator", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent, input }),
+        body: JSON.stringify({ agent, input, rubric }),
       });
-      setInput("");
-      await loadDrafts();
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "เกิดข้อผิดพลาด");
+      } else {
+        setEngine(data.engine);
+        setInput("");
+        setRubric("");
+        await loadDrafts();
+      }
+    } catch {
+      setError("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้");
     } finally {
       setSubmitting(false);
     }
@@ -46,66 +66,143 @@ export default function Home() {
     await loadDrafts();
   }
 
+  const pendingCount = drafts.filter((d) => d.status === "pending").length;
+
   return (
     <main>
-      <h1>Solven — Prototype</h1>
-      <p className="subtitle">
-        Coordinator → Grading &amp; Feedback / Lesson-Plan / Reporting &amp;
-        Communication agents. ทุกผลลัพธ์เป็นแค่ร่าง ต้องครูอนุมัติก่อนใช้จริง
-        (human-in-the-loop).
-      </p>
+      <header className="hero">
+        <div className="brand">
+          <span className="logo">S</span>
+          <div>
+            <h1>Solven</h1>
+            <p className="subtitle">
+              ผู้ช่วยครูแบบ multi-agent — คืนเวลาให้ครูได้สอน
+            </p>
+          </div>
+        </div>
+        <span className="pill">JUMP THAILAND 2026 · Empowering Teachers</span>
+      </header>
+
+      <section className="strip">
+        <p>
+          ทุกผลลัพธ์เป็น <strong>ร่างเท่านั้น</strong> — ครูตรวจและอนุมัติทุกครั้ง
+          (human-in-the-loop) ไม่มี agent ตัวใดตัดสินใจแทนครู
+        </p>
+      </section>
 
       <form className="card" onSubmit={handleSubmit}>
-        <label htmlFor="agent">Agent</label>
-        <select
-          id="agent"
-          value={agent}
-          onChange={(e) => setAgent(e.target.value as AgentType)}
-        >
+        <h2 className="section-title">เลือกงานที่อยากให้ช่วย</h2>
+        <div className="agent-grid">
           {AGENT_OPTIONS.map((a) => (
-            <option key={a} value={a}>
-              {AGENT_LABEL[a]}
-            </option>
+            <button
+              key={a}
+              type="button"
+              className={`agent-card ${agent === a ? "active" : ""}`}
+              onClick={() => setAgent(a)}
+            >
+              <span className="agent-icon">
+                {a === "grading" ? "✓" : a === "lesson-plan" ? "▦" : "✉"}
+              </span>
+              <span className="agent-name">{AGENT_LABEL[a]}</span>
+              <span className="agent-hint">{AGENT_HINTS[a]}</span>
+            </button>
           ))}
-        </select>
+        </div>
 
-        <label htmlFor="input">Input</label>
-        <textarea
-          id="input"
-          placeholder="เช่น คำตอบนักเรียน / หัวข้อบทเรียน / สรุปความก้าวหน้าที่จะส่งผู้ปกครอง"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-        />
+        {agent === "grading" && (
+          <label>
+            Rubric / เกณฑ์ที่ครูตั้ง (ไม่บังคับ)
+            <textarea
+              value={rubric}
+              onChange={(e) => setRubric(e.target.value)}
+              placeholder="เช่น ครบประเด็น 3 ข้อ = 3 คะแนน, ภาษาเรียบร้อย = 2 คะแนน"
+              className="small"
+            />
+          </label>
+        )}
 
-        <button type="submit" disabled={submitting}>
-          {submitting ? "กำลังส่งให้ agent..." : "ส่งให้ Coordinator"}
-        </button>
+        <label>
+          ข้อมูล / งานที่ส่งให้ agent
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={AGENT_HINTS[agent]}
+          />
+        </label>
+
+        <div className="form-footer">
+          <p className="note">
+            {engine &&
+              (engine === "backend"
+                ? "✓ ทำงานผ่าน Solven backend (FastAPI + LangGraph)"
+                : "• ทำงานผ่าน mock ในเครื่อง (ไม่พบ backend — ดู README)")}
+            {error && <span className="err">✗ {error}</span>}
+          </p>
+          <button type="submit" disabled={submitting || !input.trim()}>
+            {submitting ? "กำลังส่งให้ coordinator..." : "ส่งให้ Coordinator"}
+          </button>
+        </div>
       </form>
 
-      <h2>Review Queue</h2>
-      {drafts.length === 0 && <p className="empty">ยังไม่มีร่างในคิว</p>}
-      {drafts.map((d) => (
-        <div className="card" key={d.id}>
-          <div className="draft-header">
-            <strong>{AGENT_LABEL[d.agent]}</strong>
-            <span className={`badge ${d.status}`}>{d.status}</span>
-          </div>
-          <div className="output">{d.output}</div>
-          {d.status === "pending" && (
-            <div className="actions">
-              <button className="ghost" onClick={() => setStatus(d.id, "approved")}>
-                Approve
-              </button>
-              <button
-                className="secondary"
-                onClick={() => setStatus(d.id, "rejected")}
-              >
-                Reject
-              </button>
-            </div>
-          )}
+      <section>
+        <div className="queue-head">
+          <h2 className="section-title">คิวตรวจของครู</h2>
+          <span className={`pill ${pendingCount ? "has" : ""}`}>
+            {pendingCount} รออนุมัติ
+          </span>
         </div>
-      ))}
+
+        {drafts.length === 0 && (
+          <p className="empty">ยังไม่มีร่างในคิว — ส่งงานแรกเลย</p>
+        )}
+
+        {drafts.map((d) => (
+          <div className="card draft" key={d.id}>
+            <div className="draft-header">
+              <span className="agent-name small">{AGENT_LABEL[d.agent]}</span>
+              <span className={`badge ${d.status}`}>
+                {d.status === "pending"
+                  ? "รออนุมัติ"
+                  : d.status === "approved"
+                  ? "อนุมัติแล้ว"
+                  : "ปฏิเสธ"}
+              </span>
+            </div>
+            <div className="output">{d.output}</div>
+            {d.warnings.length > 0 && (
+              <ul className="warnings">
+                {d.warnings.map((w, i) => (
+                  <li key={i}>⚠ {w}</li>
+                ))}
+              </ul>
+            )}
+            {d.status === "pending" && (
+              <div className="actions">
+                <button
+                  className="ghost"
+                  onClick={() => setStatus(d.id, "approved")}
+                >
+                  อนุมัติ
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => setStatus(d.id, "rejected")}
+                >
+                  ปฏิเสธ
+                </button>
+              </div>
+            )}
+            <p className="meta">
+              {d.agent} · {new Date(d.createdAt).toLocaleString("th-TH")}
+            </p>
+          </div>
+        ))}
+      </section>
+
+      <footer>
+        Solven prototype — ข้อมูลทั้งหมดอยู่ในเครื่อง/ตัวอย่างเท่านั้น ไม่มีข้อมูลนักเรียนจริง
+        (PDPA)
+      </footer>
     </main>
   );
 }

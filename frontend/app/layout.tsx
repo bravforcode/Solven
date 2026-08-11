@@ -1,15 +1,25 @@
 import "./globals.css";
 import { ReactNode } from "react";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export const metadata = {
-  title: "Solven — Prototype",
-  description: "Multi-agent teacher assistant prototype",
+  title: "Solven — คืนเวลาให้ครู",
+  description:
+    "ผู้ช่วยครูแบบ multi-agent: ตรวจงาน ร่างแผนการสอน ร่างรายงาน — ครูอนุมัติทุกครั้ง",
+  manifest: "/manifest.webmanifest",
+};
+
+export const viewport = {
+  themeColor: "#0f6f5c",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="th">
-      <body>{children}</body>
+      <body>
+        <ServiceWorkerRegister />
+        {children}
+      </body>
     </html>
   );
 }
