@@ -43,3 +43,15 @@
 7. **Empty states teach:** no drafts → explain the flow + CTA to create; filters empty → button to clear filters.
 8. **Responsive:** ≥900px two-column layout (queue: stats + filters above list); below: single column, tabs stay top, forms full width. Structural breakpoints only — no fluid type.
 9. **Toast system** for every action result (สร้างงานแล้ว, คัดลอกแล้ว, อนุมัติแล้ว…) — errors name the problem + recovery (retry).
+
+## Motion (ReactBits — settled 12 Aug 2026)
+
+Motion components come from [ReactBits](https://reactbits.dev) (MIT, `DavidHDev/react-bits`), vendored in `components/reactbits/` with attribution headers. Chosen set — each one carries a state or a single brand moment, never decoration:
+
+- **CountUp** (stats row) — numbers animate once in view; conveys state.
+- **ShinyText** (hero brand name) — the single authored shine moment; white base, light-blue shine on deep-blue field.
+- **Particles** (hero backdrop) — subtle WebGL cloud, ≤70 particles, blue palette, `alphaParticles`, gated off under `prefers-reduced-motion`.
+- **BorderGlow** (selected agent card) — pointer-tracked glow cone in blues; cursor-only delight, absent on touch.
+
+Deliberately NOT used (would fight Operate restraint): TextLoop/ribbon effects, scroll-triggered reveals (AnimatedContent/ScrollReveal), cursor-trail/3D-scene components. All motion respects `prefers-reduced-motion` (global CSS + `useReducedMotion` gates).
+

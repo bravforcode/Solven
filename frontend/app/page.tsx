@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useReducedMotion } from "motion/react";
 import { AGENT_LABEL, AgentType, Draft } from "@/lib/types";
+import BorderGlow from "@/components/reactbits/BorderGlow";
+import CountUp from "@/components/reactbits/CountUp";
+import Particles from "@/components/reactbits/Particles";
+import ShinyText from "@/components/reactbits/ShinyText";
 
 /* ============ types & constants ============ */
 
@@ -151,6 +156,7 @@ const ICON_SEARCH = "M11 19a8 8 0 100-16 8 8 0 000 16z M21 21l-4.35-4.35";
 /* ============ app ============ */
 
 export default function Home() {
+  const reducedMotion = useReducedMotion();
   const [view, setView] = useState<View>("create");
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [draftsLoading, setDraftsLoading] = useState(true);
@@ -371,42 +377,73 @@ export default function Home() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="logo">S</span>
-          <div>
-            <div className="brand-name">Solven</div>
-            <div className="brand-sub">คืนเวลาให้ครูได้สอน</div>
+      <section className="hero" aria-label="Solven — ผู้ช่วยครู">
+        <div className="hero-particles" aria-hidden="true">
+          {!reducedMotion && (
+            <Particles
+              particleCount={70}
+              particleSpread={8}
+              speed={0.08}
+              particleColors={["#bfdbfe", "#93c5fd", "#ffffff"]}
+              alphaParticles
+              particleBaseSize={60}
+              sizeRandomness={0.8}
+              disableRotation
+            />
+          )}
+        </div>
+        <div className="hero-inner">
+          <div className="hero-brand">
+            <span className="logo">S</span>
+            <div>
+              <h1 className="hero-title">
+                <ShinyText
+                  text="Solven"
+                  color="#ffffff"
+                  shineColor="#bfdbfe"
+                  spread={90}
+                  speed={3.5}
+                  disabled={!!reducedMotion}
+                />
+              </h1>
+              <p className="hero-tagline">คืนเวลาให้ครูได้สอน</p>
+            </div>
+          </div>
+          <div className="hero-side">
+            <span className="engine-badge on-dark" title="เครื่องมือที่ทำงานอยู่เบื้องหลัง">
+              <span className={`engine-dot ${engine ? "on" : ""}`} />
+              {engine
+                ? engine === "backend"
+                  ? "Solven backend"
+                  : "mock ในเครื่อง"
+                : "กำลังเชื่อมต่อ..."}
+            </span>
+            <span className="hero-hint">ทุกผลลัพธ์เป็นร่าง — ครูตรวจและอนุมัติทุกครั้ง (human-in-the-loop)</span>
           </div>
         </div>
+      </section>
 
-        <nav className="tabs" aria-label="ส่วนหลัก">
-          <button
-            type="button"
-            className="tab"
-            aria-pressed={view === "create"}
-            onClick={() => setView("create")}
-          >
-            สร้างงาน
-          </button>
-          <button
-            type="button"
-            className="tab"
-            aria-pressed={view === "queue"}
-            onClick={() => setView("queue")}
-          >
-            คิวตรวจ
-            {pendingCount > 0 && <span className="tab-count">{pendingCount}</span>}
-          </button>
-        </nav>
+      <nav className="tabs" aria-label="ส่วนหลัก" style={{ marginBottom: 18 }}>
+        <button
+          type="button"
+          className="tab"
+          aria-pressed={view === "create"}
+          onClick={() => setView("create")}
+        >
+          สร้างงาน
+        </button>
+        <button
+          type="button"
+          className="tab"
+          aria-pressed={view === "queue"}
+          onClick={() => setView("queue")}
+        >
+          คิวตรวจ
+          {pendingCount > 0 && <span className="tab-count">{pendingCount}</span>}
+        </button>
+      </nav>
 
-        <span className="engine-badge" title="เครื่องมือที่ทำงานอยู่เบื้องหลัง">
-          <span className={`engine-dot ${engine ? "on" : ""}`} />
-          {engine ? (engine === "backend" ? "Solven backend" : "mock ในเครื่อง") : "กำลังเชื่อมต่อ..."}
-        </span>
-      </header>
-
-      <main>
+      <main className="view-in" key={view}>
         {view === "create" && (
           <form onSubmit={handleSubmit}>
             <div className="panel panel-pad" style={{ marginBottom: 16 }}>
@@ -415,24 +452,44 @@ export default function Home() {
                 ทุกผลลัพธ์เป็นร่าง — ครูตรวจและอนุมัติทุกครั้ง
               </p>
               <div className="agent-grid">
-                {AGENT_OPTIONS.map((a) => (
-                  <button
-                    key={a}
-                    type="button"
-                    className="agent-card"
-                    aria-pressed={agent === a}
-                    onClick={() => {
-                      setAgent(a);
-                      setFormError("");
-                    }}
-                  >
-                    <span className="agent-icon">
-                      <Icon d={ICONS[a]} size={20} />
-                    </span>
-                    <span className="agent-name">{AGENT_LABEL[a]}</span>
-                    <span className="agent-desc">{AGENT_DESC[a]}</span>
-                  </button>
-                ))}
+                {AGENT_OPTIONS.map((a) => {
+                  const selected = agent === a;
+                  const card = (
+                    <button
+                      type="button"
+                      className="agent-card"
+                      aria-pressed={selected}
+                      onClick={() => {
+                        setAgent(a);
+                        setFormError("");
+                      }}
+                    >
+                      <span className="agent-icon">
+                        <Icon d={ICONS[a]} size={20} />
+                      </span>
+                      <span className="agent-name">{AGENT_LABEL[a]}</span>
+                      <span className="agent-desc">{AGENT_DESC[a]}</span>
+                    </button>
+                  );
+                  return selected && !reducedMotion ? (
+                    <BorderGlow
+                      key={a}
+                      className="agent-glow"
+                      backgroundColor="#ffffff"
+                      borderRadius={14}
+                      glowRadius={14}
+                      edgeSensitivity={45}
+                      coneSpread={35}
+                      fillOpacity={0.22}
+                      glowColor="217 91% 60%"
+                      colors={["#2563eb", "#3b82f6", "#93c5fd"]}
+                    >
+                      {card}
+                    </BorderGlow>
+                  ) : (
+                    card
+                  );
+                })}
               </div>
             </div>
 
@@ -658,19 +715,27 @@ export default function Home() {
           <section>
             <div className="stats-row" aria-label="สรุปสถานะ">
               <div className="stat stat-blue">
-                <div className="stat-num">{pendingCount}</div>
+                <div className="stat-num">
+                  <CountUp to={pendingCount} duration={0.7} />
+                </div>
                 <div className="stat-label">รออนุมัติ</div>
               </div>
               <div className="stat stat-ok">
-                <div className="stat-num">{approvedCount}</div>
+                <div className="stat-num">
+                  <CountUp to={approvedCount} duration={0.7} />
+                </div>
                 <div className="stat-label">อนุมัติแล้ว</div>
               </div>
               <div className="stat stat-danger">
-                <div className="stat-num">{rejectedCount}</div>
+                <div className="stat-num">
+                  <CountUp to={rejectedCount} duration={0.7} />
+                </div>
                 <div className="stat-label">ปฏิเสธ</div>
               </div>
               <div className="stat">
-                <div className="stat-num">{drafts.length}</div>
+                <div className="stat-num">
+                  <CountUp to={drafts.length} duration={0.7} />
+                </div>
                 <div className="stat-label">ทั้งหมด</div>
               </div>
             </div>
