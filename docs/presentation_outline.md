@@ -1,6 +1,10 @@
 # Solven — Pitch Deck Outline
 JUMP THAILAND Hackathon 2026 · Presentation PDF (ข้อ 8)
 
+> **Status:** สไลด์ถูกสร้างแล้ว — `docs/presentation/solven_pitch.pdf` (10 หน้า, 1280×720)
+> regenerate ได้ด้วย `python docs/presentation/build_deck.py` (ต้องใช้ Python venv ที่มี reportlab)
+> ไฟล์นี้คือต้นทางโครงสร้างเนื้อหา ใช้ตรวจความครบถ้วนของสไลด์
+
 Target: ~10 slides, 10-min pitch. Fill `[ ]` before design pass.
 
 1. **Title** — Solven. Team name, member names (advisor line). [ ] members/advisor names
