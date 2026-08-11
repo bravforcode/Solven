@@ -11,3 +11,5 @@ dist/
 build/
 *.log
 *.tsbuildinfo
+# stray temp-file leak from a hook (weird PUA filename)
+C:*Users*opencode*
