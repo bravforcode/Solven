@@ -6,7 +6,7 @@ Built for **JUMP THAILAND Hackathon 2026** (AIS) — theme: *AI for the Future o
 
 ## Problem
 
-Thai learning outcomes are declining and unequally distributed (PISA 2022). A major structural driver is teacher shortage and misallocation in small schools (TDRI research) — teachers lose disproportionate time to admin/grading work instead of instruction (OECD TALIS). World Bank (2015) shows restoring teacher time directly lifts student achievement.
+Thai learning outcomes are declining and unequally distributed: PISA 2022 mathematics score for Thailand = **394** (OECD), down from 419 in 2018. A major structural driver is teacher shortage and misallocation in small schools (TDRI research) — teachers in understaffed schools carry a disproportionate load of admin/grading work instead of instruction (OECD TALIS). World Bank (2015) evidence shows restoring teacher time directly lifts student achievement.
 
 ## Solution
 
@@ -21,23 +21,43 @@ Solven is a coordinator + 3 sub-agent system, designed to plug into the existing
 
 All agent output is draft-only until a teacher approves — no fully autonomous grading or messaging.
 
+## Status (honest)
+
+| Layer | Now | Next |
+|---|---|---|
+| Web UI | Working prototype — Next.js 14 (App Router, TS) + coordinator route + 3 agents + approve/reject review queue (in-memory) | Wire to real backend, offline-first PWA |
+| Backend | In progress — Python FastAPI + LangGraph coordinator, SQLite audit log (`agent_runs`), LLM client with local/mock fallback | Thai open-source LLM self-host |
+| Docs | Problem brief + pitch-deck outline + target architecture (see `docs/`) | — |
+
+The full production-grade target architecture is described in [docs/appendix-a-architecture.md](docs/appendix-a-architecture.md) — everything in the app entry is a *working prototype* of that target, with mock agent outputs until the backend is wired.
+
 ## Tech Stack
 
-- **Frontend:** Next.js + TypeScript
-- **Backend:** Python multi-agent orchestration
-- **LLMs:** Claude, Gemini
-- **Integration target:** AIS LearnDi / AIS Cloud (AIS EEC)
+- **Frontend:** Next.js (App Router) + TypeScript
+- **Backend:** Python FastAPI + LangGraph (coordinator orchestration), SQLite
+- **LLMs:** configurable — Anthropic/OpenAI API now; Thai open-source models for scale (see Appendix A)
+- **Integration target:** AIS LearnDi / AIS Cloud (AIS EEC) — data residency in Thailand (PDPA)
 
 ## Repo Layout
 
 ```
-frontend/            Next.js + TypeScript UI
-backend/
-  coordinator/        routing, state, human-in-the-loop gating
-  agents/              grading, lesson-plan, reporting sub-agents
-docs/                 pitch deck, architecture notes
+frontend/            Next.js + TypeScript UI (working prototype)
+backend/             FastAPI + LangGraph services (in progress)
+docs/                problem brief, pitch-deck outline, target architecture
 ```
 
-## Status
+## Getting Started
 
-Hackathon submission in progress — architecture defined, implementation starting.
+```bash
+# frontend
+cd frontend
+npm install
+npm run dev          # http://localhost:3000
+
+# backend
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
