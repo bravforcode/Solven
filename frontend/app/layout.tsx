@@ -1,6 +1,13 @@
 import "./globals.css";
 import { ReactNode } from "react";
+import { Inter, Noto_Sans_Thai } from "next/font/google";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const notoThai = Noto_Sans_Thai({
+  subsets: ["thai", "latin"],
+  variable: "--font-noto-thai",
+});
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://solven.example.com";
@@ -84,7 +91,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
       </head>
-      <body>
+      <body className={`${inter.variable} ${notoThai.variable}`}>
         <ServiceWorkerRegister />
         {children}
       </body>

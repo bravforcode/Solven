@@ -1,57 +1,49 @@
 # DESIGN.md — Solven Web
 
-> Direction contract (opening comment):
+> Direction contract (opening comment, replaced 12 Aug 2026 — brief-pinned world):
 >
-> **THESIS:** Solven is the teacher's second desk — a calm blue-and-white operating surface where every routine admin task is one form, one review, one approval away. It refuses the generic AI-chat page (a lonely text box on a hero) that the category always ships: the visitor operates, not chats.
+> **THESIS:** Solven is a teacher's operations dashboard in Stripe's visual grammar — dense, calm, and familiar to anyone who has run a business on the web. The visitor operates (create work, review drafts, approve), never chats with a hero.
 >
-> **OWN-WORLD:** White content surfaces on a pale blue-tinted ground; blue (#2563eb) owns navigation, primary actions, and current selection only; semantic green/amber/red reserved for state. One sans family, fixed rem scale, 40px control rhythm, 4px spacing grid. Drafts are cards with a hard status badge — no gradients, no glass, no decorative chrome.
+> **OWN-WORLD:** Light-gray canvas (`#f6f8fa`), white surfaces with hairline `#e6e8eb` borders, navy ink (`#0a2540`), indigo accent (`#635bff`) reserved for primary actions + selection; Inter + Noto Sans Thai. Left sidebar nav (white), page-title topbar, pill badges with status dots, metric tiles, segmented chips.
 >
-> **STORY:** A teacher in a small school opens the app on a phone between classes. She picks the job (check work / draft a lesson plan / draft a message), fills one short form, and gets a draft in the review queue — approved or rejected with one tap. Everything is a draft until she says so.
+> **STORY:** A teacher in a small school opens Solven like a dashboard. Create work in the left panel, review drafts as cards with status pills, approve with one tap. Everything is a draft until she says so.
 >
-> **FIRST VIEWPORT:** Header with brand + view tabs (สร้างงาน · คิวตรวจ). Below: three job cards — ตรวจงาน / แผนการสอน / รายงาน — as the primary action, not a hero. The queue tab carries the pending count so the human-in-the-loop promise is visible before any interaction.
+> **FIRST VIEWPORT:** White sidebar (Solven + สร้างงาน/คิวตรวจ + engine status) · topbar with page title and user avatar · content: three agent cards (grading/lesson-plan/reporting) in Stripe feature-card grammar.
 >
-> **FORM:** Brief-pinned world (ฟ้า-ขาว Operate app) — direction supplied by the user, so no concept tournament was run; this file records the committed build, not a contested pick.
+> **FORM:** Brief-pinned replacement world ("เหมือน dashboard.stripe.com") — the incumbent blue/white world is superseded; this file records the committed Stripe grammar.
 
 ## Design tokens (settled by build — 12 Aug 2026)
 
 | Token | Value | Use |
 |---|---|---|
-| `--bg` | `#f5f8fc` | app ground (pale blue-tinted) |
+| `--bg` | `#f6f8fa` | app canvas |
 | `--surface` | `#ffffff` | cards, panels, inputs |
-| `--surface-2` | `#eef4fb` | sidebar/panel tint, hover wells |
-| `--ink` | `#0f172a` | primary text |
-| `--muted` | `#5b6b82` | secondary text (≥4.5:1 on white) |
-| `--line` | `#dbe4f0` | borders, dividers |
-| `--blue` | `#2563eb` | primary actions, active tab, focus ring |
-| `--blue-dark` | `#1d4ed8` | hover on primary |
-| `--blue-deep` | `#1e3a8a` | brand block, deep accents |
-| `--blue-soft` | `#eff6ff` | selected/active tint, info wells |
-| `--ok` / soft | `#15803d` / `#ecfdf3` | approved state |
-| `--warn` / soft | `#b45309` / `#fffbeb` | pending state |
-| `--danger` / soft | `#b91c1c` / `#fef2f2` | rejected/errors |
-| `--radius` | `12px` (controls 8px) | — |
-| `--shadow-1/2` | `0 1px 2px rgba(15,23,42,.06)` / `0 12px 32px rgba(15,23,42,.10)` | cards / floating |
+| `--surface-2` | `#f0f2f5` | hover wells, nav active, icon tiles |
+| `--ink` | `#0a2540` | primary text (Stripe navy) |
+| `--muted` | `#697386` | secondary text (≥4.5:1) |
+| `--line` | `#e6e8eb` | hairline borders |
+| `--line-strong` | `#cfd7df` | input borders |
+| `--accent` | `#635bff` | primary actions, selection, focus (indigo) |
+| `--accent-hover` | `#5851e8` | hover on primary |
+| `--accent-soft` | `#eceefe` | selected tint, count pills |
+| `--ok` / soft | `#0a7a53` / `#e6f6ee` | approved |
+| `--warn` / soft | `#9a6b00` / `#fff7e0` | pending |
+| `--danger` / soft | `#b3261e` / `#fdecec` | rejected/errors |
+| `--radius` | `12px` (controls 6px) | — |
+| fonts | Inter (latin) + Noto Sans Thai via `next/font`, self-hosted | body 15px |
 
 ## Rules
 
-1. **Blue is a role, not decoration.** Blue = navigation, primary action, current selection, focus. Never for passive text or borders of idle controls.
-2. **One sans family** (`"Noto Sans Thai", "Sarabun", "Segoe UI", system-ui`), fixed rem scale (0.75 · 0.875 · 1 · 1.125 · 1.25 · 1.5), body 16px.
-3. **Every interactive control has 7 states:** default · hover · focus(ring 2px blue) · active · disabled · loading · error. Buttons ≥40px touch target.
-4. **State communicates through color+word together** — badge text (รออนุมัติ/อนุมัติแล้ว/ปฏิเสธ), not color alone.
-5. **No gradients, no glass, no animated entrances.** One authored motion: queue items fade/slide 180ms ease-out on appear; toasts slide in bottom-right (bottom center on mobile), auto-dismiss 4s.
-6. **Drafts are cards with status badge, warnings list, and actions** — copy + download on every draft; approve/reject only while pending.
-7. **Empty states teach:** no drafts → explain the flow + CTA to create; filters empty → button to clear filters.
-8. **Responsive:** ≥900px two-column layout (queue: stats + filters above list); below: single column, tabs stay top, forms full width. Structural breakpoints only — no fluid type.
-9. **Toast system** for every action result (สร้างงานแล้ว, คัดลอกแล้ว, อนุมัติแล้ว…) — errors name the problem + recovery (retry).
+1. **Indigo is a role, not decoration.** `#635bff` = primary action, selected state, focus ring. Navigation and idle surfaces stay navy/white/gray.
+2. **Stripe anatomy:** sticky white sidebar (brand, nav, engine status in footer) + page-title topbar + centered content column (max 1120px). Mobile: sidebar hidden, pill nav row on top.
+3. **Status pills carry a dot** (::before) + colored text on soft tint — state reads by color AND word (รออนุมัติ/อนุมัติแล้ว/ปฏิเสธ).
+4. **Density over decoration:** small caps labels (12–13px gray), 15px body, metric tiles with big navy numbers + gray labels. No gradients, no glass, no decorative borders.
+5. **Every interactive control has 7 states** (default/hover/focus/active/disabled/loading/error); focus = 2px indigo ring.
+6. **One authored motion:** view transitions + draft-card appear (180ms ease-out), CountUp on metric tiles (state feedback), dark toasts slide in. Everything respects `prefers-reduced-motion`.
+7. **Empty states teach:** icon in gray circle, title, description, one primary action (สร้างงานแรก / ลองใหม่ / ล้างตัวกรอง).
+8. **Toasts:** dark navy bottom-right (bottom-center mobile), auto-dismiss 4s, success/error/info variants.
+9. **Responsive:** sidebar collapses below 900px; agent grid 3→1 col; stats 4→2 col.
 
-## Motion (ReactBits — settled 12 Aug 2026)
+## Motion & components (ReactBits — state)
 
-Motion components come from [ReactBits](https://reactbits.dev) (MIT, `DavidHDev/react-bits`), vendored in `components/reactbits/` with attribution headers. Chosen set — each one carries a state or a single brand moment, never decoration:
-
-- **CountUp** (stats row) — numbers animate once in view; conveys state.
-- **ShinyText** (hero brand name) — the single authored shine moment; white base, light-blue shine on deep-blue field.
-- **Particles** (hero backdrop) — subtle WebGL cloud, ≤70 particles, blue palette, `alphaParticles`, gated off under `prefers-reduced-motion`.
-- **BorderGlow** (selected agent card) — pointer-tracked glow cone in blues; cursor-only delight, absent on touch.
-
-Deliberately NOT used (would fight Operate restraint): TextLoop/ribbon effects, scroll-triggered reveals (AnimatedContent/ScrollReveal), cursor-trail/3D-scene components. All motion respects `prefers-reduced-motion` (global CSS + `useReducedMotion` gates).
-
+ReactBits components remain vendored in `components/reactbits/` (MIT, `DavidHDev/react-bits`) but the Stripe world uses only **CountUp** (metric tiles — quiet, stateful). Particles/ShinyText/BorderGlow are retired from this world: Stripe's grammar has no decorative motion, and the brief pins the world.
