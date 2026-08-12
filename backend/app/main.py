@@ -19,7 +19,7 @@ from app.middleware import (
     SecurityHeadersMiddleware,
 )
 from app.migrate import apply_migrations
-from app.schema import DraftOut, PatchDraft, TaskRequest
+from app.schema import DraftOut, PatchDraft, RunRecord, TaskRequest
 from app.security import auth_dependency
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -75,7 +75,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def submit_task(body: TaskRequest) -> DraftOut:
         if body.agent not in VALID_AGENTS:
             raise HTTPException(400, "unknown agent")
-        draft = run_task(store, body.agent, body.input, body.rubric)
+        draft = run_task(store, body.agent, body.input, body.rubric, body.client_task_id)
         return _to_out(draft)
 
     @app.get("/api/drafts", dependencies=[require_token], tags=["api"])
@@ -92,9 +92,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return _to_out(row)
 
     @app.get("/api/audit", dependencies=[require_token], tags=["api"])
-    def audit(task_id: Optional[str] = None) -> list[dict]:
+    def audit(task_id: Optional[str] = None) -> list[RunRecord]:
         """agent_runs audit trail (Appendix A.7)."""
-        return store.list_runs(task_id)
+        return [RunRecord(**r) for r in store.list_runs(task_id)]
 
     return app
 

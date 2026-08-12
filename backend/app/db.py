@@ -78,12 +78,16 @@ class Store:
         return _conn(self._db_path)
 
     # ---- tasks ----
-    def create_task(self, task_id: str, agent: str, input_text: str, state: str = "submitted") -> None:
+    def create_task(self, task_id: str, agent: str, input_text: str, state: str = "submitted") -> bool:
+        """Insert a task. Returns False (no-op) if task_id already exists —
+        lets callers detect a replayed request (offline-queue retry) and skip
+        re-running the agent instead of duplicating work."""
         with self._c() as conn:
-            conn.execute(
-                "INSERT INTO tasks (id, agent, input, state, created_at) VALUES (?,?,?,?,?)",
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO tasks (id, agent, input, state, created_at) VALUES (?,?,?,?,?)",
                 (task_id, agent, input_text, state, now_iso()),
             )
+        return cur.rowcount > 0
 
     def set_task_state(self, task_id: str, state: str) -> None:
         with self._c() as conn:

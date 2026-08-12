@@ -5,6 +5,8 @@ or gateway-issued). Swap the dependency body for OIDC/JWT validation when a
 user directory is attached — the interface (Bearer scheme) stays the same.
 """
 
+import hmac
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -17,7 +19,7 @@ def auth_dependency(settings: Settings):
     def require_token(
         creds: HTTPAuthorizationCredentials | None = Depends(scheme),
     ) -> None:
-        if creds is None or creds.credentials != settings.api_token:
+        if creds is None or not hmac.compare_digest(creds.credentials, settings.api_token):
             raise HTTPException(
                 status_code=401,
                 detail="invalid or missing bearer token",

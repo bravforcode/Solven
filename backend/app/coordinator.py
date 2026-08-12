@@ -123,9 +123,23 @@ def make_coordinator(store: Store):
     return g.compile()
 
 
-def run_task(store: Store, agent: str, user_input: str, rubric: str | None = None) -> dict:
-    task_id = str(uuid.uuid4())
-    store.create_task(task_id, agent, user_input)
+def run_task(
+    store: Store,
+    agent: str,
+    user_input: str,
+    rubric: str | None = None,
+    client_task_id: str | None = None,
+) -> dict:
+    task_id = client_task_id or str(uuid.uuid4())
+    inserted = store.create_task(task_id, agent, user_input)
+    if not inserted:
+        # replayed request (e.g. offline-queue retry after reconnect) — return the
+        # draft already produced instead of re-running the agent.
+        existing = [d for d in store.list_drafts() if d["task_id"] == task_id]
+        if existing:
+            return existing[0]
+        # task row exists but no draft yet (rare race, e.g. duplicate in-flight
+        # delivery) — fall through and run normally rather than error out.
     state: CoordState = {
         "task_id": task_id,
         "agent": agent,

@@ -60,6 +60,7 @@ npm run start
 - [ ] Rate limit ระดับ edge (WAF/nginx) นอกเหนือจาก in-app limiter
 - [ ] Multi-instance backend → replace SQLite+in-memory limiter ด้วย PostgreSQL + Redis
 - [ ] Auth จริง (OIDC/JWT) แทน service token — interface Bearer พร้อมรองรับ (app/security.py)
+- [ ] CSP hardening: `script-src 'unsafe-inline'` ปัจจุบันจำเป็นเพราะ RSC inline payload ของ Next.js (ถ้าไม่มี → hydration ไม่เกิด) — เปลี่ยนเป็น nonce-based CSP เมื่อมี infrastructure รองรับ (ดู next.config.js comment)
 - [ ] Backup DB + retention policy ข้อมูลนักเรียนตาม PDPA
 - [ ] Monitoring: `/health` ใช้กับ load balancer; structured log มี `request_id` ทุก request
 - [ ] รัน `python -m app.migrate` ในขั้นตอน release (ไมเกรชัน idempotent)

@@ -10,6 +10,7 @@ export interface Draft {
   status: DraftStatus;
   warnings: string[];
   createdAt: string;
+  engine?: "backend" | "mock";
 }
 
 export const AGENT_LABEL: Record<AgentType, string> = {

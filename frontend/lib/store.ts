@@ -12,6 +12,11 @@ const drafts: Draft[] = globalForStore.__solvenDrafts ?? [];
 globalForStore.__solvenDrafts = drafts;
 
 export function addDraft(draft: Draft): void {
+  const existingIdx = drafts.findIndex((d) => d.id === draft.id);
+  if (existingIdx !== -1) {
+    drafts[existingIdx] = draft;
+    return;
+  }
   drafts.unshift(draft);
 }
 

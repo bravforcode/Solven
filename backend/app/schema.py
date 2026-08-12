@@ -10,6 +10,8 @@ class TaskRequest(BaseModel):
     agent: AgentType
     input: str = Field(min_length=1, max_length=50_000)
     rubric: Optional[str] = Field(default=None, max_length=10_000)  # grading only
+    client_task_id: Optional[str] = Field(default=None, max_length=100)
+    # client-generated id for idempotent replay (offline-queue retry after reconnect)
 
 
 class DraftOut(BaseModel):

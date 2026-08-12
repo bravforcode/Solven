@@ -26,7 +26,7 @@ All agent output is draft-only until a teacher approves — no fully autonomous 
 | Layer | Now | Next |
 |---|---|---|
 | Web UI | Working prototype — Next.js 14 (App Router, TS) + coordinator route + 3 agents + approve/reject review queue + PWA manifest/SW; falls back to local mock if backend is down | Offline-first hardening, real-world pilot |
-| Backend | Working — Python FastAPI + LangGraph coordinator, 3 sub-agents, rule-based guardrail, SQLite audit log (`agent_runs`), LLM client with API/mock fallback, **12 tests passing** | Thai open-source LLM self-host (target: Typhoon2), auth/RBAC |
+| Backend | Working — Python FastAPI + LangGraph coordinator, 3 sub-agents, rule-based guardrail, SQLite audit log (`agent_runs`), LLM client with API/mock fallback, test suite green in CI (see below) | Thai open-source LLM self-host (target: Typhoon2), auth/RBAC |
 | Docs | Problem brief + pitch-deck (10-slide PDF + generator) + target architecture (`docs/`) | — |
 
 The full production-grade target architecture is described in [docs/appendix-a-architecture.md](docs/appendix-a-architecture.md) — everything in the app entry is a *working prototype* of that target, with mock agent outputs until the backend is wired.

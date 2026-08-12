@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_LABEL, AgentType, Draft } from "@/lib/types";
+import { enqueueTask, flushQueue, listQueuedTasks, QueuedTask } from "@/lib/offlineQueue";
 import CountUp from "@/components/reactbits/CountUp";
 
 /* ============ types & constants ============ */
@@ -164,6 +165,7 @@ export default function Home() {
   const [draftsLoading, setDraftsLoading] = useState(true);
   const [draftsError, setDraftsError] = useState("");
   const [engine, setEngine] = useState<string>("");
+  const [queuedCount, setQueuedCount] = useState(0);
 
   // create-form state
   const [agent, setAgent] = useState<AgentType>("grading");
@@ -217,6 +219,65 @@ export default function Home() {
     setPresets(loadPresets());
   }, [loadDrafts]);
 
+  /* ----- offline queue (Appendix A.8) ----- */
+  const refreshQueuedCount = useCallback(async () => {
+    setQueuedCount((await listQueuedTasks()).length);
+  }, []);
+
+  const flushOfflineQueue = useCallback(async () => {
+    const submitOne = async (task: QueuedTask): Promise<boolean> => {
+      try {
+        const res = await fetch("/api/coordinator", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agent: task.agent,
+            input: task.input,
+            rubric: task.rubric,
+            client_task_id: task.clientTaskId,
+          }),
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    };
+    const flushed = await flushQueue(submitOne);
+    if (flushed > 0) {
+      pushToast("success", `ส่งงานที่ค้างไว้ตอนออฟไลน์สำเร็จ ${flushed} รายการ`);
+      await loadDrafts();
+    }
+    await refreshQueuedCount();
+  }, [loadDrafts, pushToast, refreshQueuedCount]);
+
+  const registerBackgroundSync = useCallback(async () => {
+    try {
+      if ("serviceWorker" in navigator && "SyncManager" in window) {
+        const reg = await navigator.serviceWorker.ready;
+        // @ts-expect-error - background sync isn't in default lib.dom typings
+        await reg.sync.register("solven-sync");
+      }
+    } catch {
+      // best-effort — the 'online' listener below is the fallback path
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshQueuedCount();
+    window.addEventListener("online", flushOfflineQueue);
+    const onSwMessage = (e: MessageEvent) => {
+      if (e.data?.type === "solven-sync-flushed") {
+        loadDrafts();
+        refreshQueuedCount();
+      }
+    };
+    navigator.serviceWorker?.addEventListener?.("message", onSwMessage);
+    return () => {
+      window.removeEventListener("online", flushOfflineQueue);
+      navigator.serviceWorker?.removeEventListener?.("message", onSwMessage);
+    };
+  }, [flushOfflineQueue, loadDrafts, refreshQueuedCount]);
+
   /* ----- create payloads ----- */
   function buildPayloads(): { agent: AgentType; input: string; rubric?: string }[] {
     if (agent === "grading") {
@@ -260,36 +321,62 @@ export default function Home() {
     setProgress({ done: 0, total: payloads.length });
     let lastEngine = "";
     let created = 0;
+    let queued = 0;
     try {
       for (let i = 0; i < payloads.length; i++) {
         setProgress({ done: i, total: payloads.length });
-        const res = await fetch("/api/coordinator", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payloads[i]),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as { engine?: string; engineError?: string | null };
-        lastEngine = data.engine ?? lastEngine;
-        if (data.engine === "mock") {
-          pushToast(
-            "info",
-            data.engineError
-              ? `backend ไม่พร้อมใช้งาน (${data.engineError}) — ใช้ mock ในเครื่อง`
-              : "backend ไม่พร้อมใช้งาน — ใช้ mock ในเครื่อง (ดู README)"
-          );
+        const clientTaskId = crypto.randomUUID();
+        try {
+          const res = await fetch("/api/coordinator", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...payloads[i], client_task_id: clientTaskId }),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = (await res.json()) as { engine?: string; engineError?: string | null };
+          lastEngine = data.engine ?? lastEngine;
+          if (data.engine === "mock") {
+            pushToast(
+              "info",
+              data.engineError
+                ? `backend ไม่พร้อมใช้งาน (${data.engineError}) — ใช้ mock ในเครื่อง`
+                : "backend ไม่พร้อมใช้งาน — ใช้ mock ในเครื่อง (ดู README)"
+            );
+          }
+          created++;
+        } catch (err) {
+          // network-level failure (truly offline) — queue for background sync
+          // instead of aborting the whole batch. Anything else (HTTP error) rethrows.
+          if (!(err instanceof TypeError)) throw err;
+          await enqueueTask({
+            clientTaskId,
+            agent: payloads[i].agent,
+            input: payloads[i].input,
+            rubric: payloads[i].rubric,
+            createdAt: new Date().toISOString(),
+          });
+          queued++;
         }
-        created++;
       }
-      setEngine(lastEngine);
-      if (created > 1) pushToast("success", `สร้างร่าง ${created} รายการแล้ว — ไปตรวจที่คิว`);
-      else pushToast("success", "สร้างร่างแล้ว — ไปตรวจที่คิว");
+      if (queued > 0) {
+        await registerBackgroundSync();
+        await refreshQueuedCount();
+        pushToast(
+          "info",
+          `ออฟไลน์ — บันทึกงาน ${queued} รายการไว้ในคิว จะส่งอัตโนมัติเมื่อกลับมาออนไลน์`
+        );
+      }
+      if (created > 0) {
+        setEngine(lastEngine);
+        if (created > 1) pushToast("success", `สร้างร่าง ${created} รายการแล้ว — ไปตรวจที่คิว`);
+        else pushToast("success", "สร้างร่างแล้ว — ไปตรวจที่คิว");
+      }
       setInput("");
       setSummary("");
       setRubric("");
       setTopic("");
       await loadDrafts();
-      setView("queue");
+      if (created > 0) setView("queue");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setFormError(`ส่งงานล้มเหลว (${msg}) — ลองใหม่`);
@@ -405,6 +492,14 @@ export default function Home() {
         </div>
         <nav className="sidebar-nav" aria-label="ส่วนหลัก">{navItems}</nav>
         <div className="sidebar-foot">
+          {queuedCount > 0 && (
+            <span
+              className="badge badge-pending"
+              title="งานที่ถูกบันทึกไว้ตอนออฟไลน์ จะส่งอัตโนมัติเมื่อกลับมาออนไลน์"
+            >
+              {queuedCount} รอส่ง (ออฟไลน์)
+            </span>
+          )}
           <span className="engine-badge" title="เครื่องมือที่ทำงานอยู่เบื้องหลัง">
             <span className={`engine-dot ${engine ? "on" : ""}`} />
             {engine ? (engine === "backend" ? "Solven backend" : "mock ในเครื่อง") : "กำลังเชื่อมต่อ..."}

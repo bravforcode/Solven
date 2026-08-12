@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { patchDraft } from "@/lib/backend";
 import { updateDraftStatus } from "@/lib/store";
 import { DraftStatus } from "@/lib/types";
 
@@ -15,6 +16,12 @@ export async function PATCH(
   const draft = updateDraftStatus(params.id, status);
   if (!draft) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+
+  // best-effort: mirror teacher decision to the backend audit trail
+  // (fails soft — local status already updated above regardless).
+  if (draft.engine === "backend") {
+    await patchDraft(draft.id, status);
   }
 
   return NextResponse.json(draft);

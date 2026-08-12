@@ -21,7 +21,8 @@ export interface RunResult {
 export async function runAgent(
   agent: AgentType,
   input: string,
-  rubric?: string
+  rubric?: string,
+  clientTaskId?: string
 ): Promise<RunResult> {
   try {
     const res = await fetch(`${API_URL}/api/coordinator`, {
@@ -31,7 +32,12 @@ export async function runAgent(
         ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
       },
       signal: AbortSignal.timeout(30000),
-      body: JSON.stringify({ agent, input, rubric: rubric || undefined }),
+      body: JSON.stringify({
+        agent,
+        input,
+        rubric: rubric || undefined,
+        client_task_id: clientTaskId || undefined,
+      }),
     });
     if (!res.ok) throw new Error(`backend ${res.status}`);
     const d = await res.json();
@@ -62,6 +68,26 @@ export async function runAgent(
         createdAt: new Date().toISOString(),
       },
     };
+  }
+}
+
+export async function patchDraft(
+  id: string,
+  status: "approved" | "rejected"
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/drafts/${id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+      },
+      signal: AbortSignal.timeout(10000),
+      body: JSON.stringify({ status }),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
