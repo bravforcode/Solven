@@ -2,6 +2,7 @@ import "./globals.css";
 import { ReactNode } from "react";
 import { Inter, Noto_Sans_Thai } from "next/font/google";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const notoThai = Noto_Sans_Thai({
@@ -86,6 +87,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="th">
       <head>
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
@@ -93,7 +95,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body className={`${inter.variable} ${notoThai.variable}`}>
         <ServiceWorkerRegister />
-        {children}
+        <ErrorBoundary>{children}</ErrorBoundary>
       </body>
     </html>
   );

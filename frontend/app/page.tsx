@@ -42,10 +42,57 @@ const GRADE_OPTIONS = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6", "�
 const DURATIONS = ["50 นาที", "60 นาที", "80 นาที", "100 นาที", "ครึ่งวัน"];
 
 const PRESETS_KEY = "solven.rubricPresets";
+const SETTINGS_KEY = "solven.settings";
 const DEFAULT_PRESET: RubricPreset = {
   name: "ตัวอย่าง: สังคมศึกษา",
   text: "ตอบครบประเด็น 3 ข้อ = 3 คะแนน\nอธิบายเหตุผลประกอบ = 2 คะแนน\nภาษา/การเขียนเรียบร้อย = 1 คะแนน\nรวม 6 คะแนน",
 };
+
+interface Settings {
+  grade?: string;
+  duration?: string;
+  tone?: string;
+}
+
+function readSettings(): Settings {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_KEY);
+    return raw ? (JSON.parse(raw) as Settings) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSettings(patch: Settings) {
+  try {
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...readSettings(), ...patch }));
+  } catch {
+    // storage unavailable — settings are a convenience, never a blocker
+  }
+}
+
+/** Synthetic demo content — clearly labeled, no real student data (PDPA). */
+const DEMO_TASKS: { agent: AgentType; input: string; rubric?: string }[] = [
+  {
+    agent: "grading",
+    input: "คำตอบ (ตัวอย่าง): 2+2=4 เพราะเรานับนิ้วรวมกัน",
+    rubric: "ตอบถูก = 2 คะแนน\nอธิบายเหตุผล = 2 คะแนน",
+  },
+  {
+    agent: "grading",
+    input: "คำตอบ (ตัวอย่าง): ประเทศไทยมีประชากรประมาณ 66 ล้านคน",
+    rubric: "ตอบถูก = 2 คะแนน\nอธิบายเหตุผล = 2 คะแนน",
+  },
+  {
+    agent: "lesson-plan",
+    input: "หัวข้อ/ตัวชี้วัด: การบวกเศษส่วนที่มีตัวส่วนเท่ากัน\nระดับชั้น: ป.5\nจำนวนนักเรียน: 30\nเวลาที่มี: 60 นาที",
+  },
+  {
+    agent: "reporting",
+    input: "ผู้รับ: ผู้ปกครอง\nน้ำเสียง: สุภาพ เป็นทางการ\nสรุปความก้าวหน้าของนักเรียน: อ่านหนังสือคล่องขึ้น ส่งงานตรงเวลามากขึ้น",
+  },
+];
 
 const VIEW_TITLES: Record<View, { title: string; sub: string }> = {
   create: { title: "สร้างงาน", sub: "เลือกงานที่อยากให้ช่วย — ผลลัพธ์ทุกชิ้นเป็นร่างที่ครูต้องอนุมัติ" },
@@ -174,11 +221,12 @@ export default function Home() {
   const [presetName, setPresetName] = useState("");
   const [presets, setPresets] = useState<RubricPreset[]>([]);
   const [topic, setTopic] = useState("");
-  const [grade, setGrade] = useState("ป.5");
+  // defaults come from Settings (localStorage); the form uses them as prefilled
+  const [grade, setGrade] = useState(() => readSettings().grade ?? "ป.5");
   const [students, setStudents] = useState("30");
-  const [duration, setDuration] = useState(DURATIONS[0]);
+  const [duration, setDuration] = useState(() => readSettings().duration ?? DURATIONS[0]);
   const [recipient, setRecipient] = useState(RECIPIENTS[0]);
-  const [tone, setTone] = useState(TONES[0]);
+  const [tone, setTone] = useState(() => readSettings().tone ?? TONES[0]);
   const [summary, setSummary] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -277,6 +325,20 @@ export default function Home() {
       navigator.serviceWorker?.removeEventListener?.("message", onSwMessage);
     };
   }, [flushOfflineQueue, loadDrafts, refreshQueuedCount]);
+
+  // Settings: persist preference changes (grade/duration/tone)
+  useEffect(() => {
+    saveSettings({ grade, duration, tone });
+  }, [grade, duration, tone]);
+
+  // Auto-refresh the review queue while it's open (teachers leave the tab on)
+  useEffect(() => {
+    if (view !== "queue") return;
+    const timer = window.setInterval(() => {
+      loadDrafts().catch(() => {});
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [view, loadDrafts]);
 
   /* ----- create payloads ----- */
   function buildPayloads(): { agent: AgentType; input: string; rubric?: string }[] {
@@ -407,6 +469,68 @@ export default function Home() {
   async function handleCopy(d: Draft) {
     const ok = await copyText(d.output);
     pushToast(ok ? "success" : "error", ok ? "คัดลอกผลลัพธ์แล้ว" : "คัดลอกไม่สำเร็จ");
+  }
+
+  /* ----- convenience: demo data + export ----- */
+  async function seedDemoData() {
+    if (submitting) return;
+    setSubmitting(true);
+    let created = 0;
+    try {
+      for (const task of DEMO_TASKS) {
+        const res = await fetch("/api/coordinator", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(task),
+        });
+        if (res.ok) created++;
+      }
+      await loadDrafts();
+      pushToast(
+        created > 0 ? "success" : "error",
+        created > 0
+          ? `โหลดข้อมูลตัวอย่างแล้ว ${created} รายการ — ทุกชิ้นเป็นข้อมูลสมมติ ตรวจและอนุมัติได้เลย`
+          : "โหลดข้อมูลตัวอย่างไม่สำเร็จ — ตรวจ backend ก่อน"
+      );
+      setView("queue");
+    } catch (err) {
+      pushToast("error", `โหลดข้อมูลตัวอย่างล้มเหลว: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function exportApproved() {
+    const approved = drafts.filter((d) => d.status === "approved");
+    if (approved.length === 0) {
+      pushToast("info", "ยังไม่มีรายการที่อนุมัติให้ส่งออก");
+      return;
+    }
+    const lines = [
+      "# Solven — งานที่อนุมัติแล้ว",
+      "",
+      `สร้างเมื่อ: ${new Date().toLocaleString("th-TH")}`,
+      `จำนวน: ${approved.length} รายการ`,
+      "",
+      ...approved.flatMap((d) => [
+        `## ${AGENT_LABEL[d.agent]} — ${fmtTime(d.createdAt)}`,
+        "",
+        d.output,
+        "",
+        "---",
+        "",
+      ]),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `solven-approved-${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    pushToast("success", `ส่งออก ${approved.length} รายการเป็นไฟล์ .md แล้ว`);
   }
 
   /* ----- presets ----- */
@@ -834,6 +958,16 @@ export default function Home() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                {approvedCount > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={exportApproved}
+                    title="ดาวน์โหลดงานที่อนุมัติแล้วเป็นไฟล์ .md"
+                  >
+                    ส่งออกที่อนุมัติ ({approvedCount})
+                  </button>
+                )}
               </div>
 
               {draftsLoading ? (
@@ -859,9 +993,20 @@ export default function Home() {
                     ส่งงานแรกจากเมนู “สร้างงาน” — ตรวจงาน แผนการสอน หรือรายงาน
                     ผลลัพธ์จะมาปรากฏที่นี่เพื่อให้ครูตรวจและอนุมัติ
                   </p>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={() => setView("create")}>
-                    สร้างงานแรก
-                  </button>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => setView("create")}>
+                      สร้างงานแรก
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={seedDemoData}
+                      disabled={submitting}
+                      title="สร้างงานตัวอย่างสมมติ (ไม่มีข้อมูลนักเรียนจริง — PDPA)"
+                    >
+                      {submitting ? "กำลังโหลด..." : "โหลดข้อมูลตัวอย่าง"}
+                    </button>
+                  </div>
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="empty">

@@ -71,4 +71,14 @@ npm run dev          # http://localhost:3000
 - ✅ Auth (Bearer), rate limiting, security headers, request IDs, structured logging
 - ✅ Config ทั้งหมดผ่าน env (`SOLVEN_*`), migrations runner (`app/migrate.py`), input limits
 - ✅ CI (`pytest` 32 tests + lint/typecheck/build), Docker + docker-compose
+- ✅ Offline-first: IndexedDB queue + Background Sync + auto-flush on reconnect (Appendix A.8)
+- ✅ PWA: manifest + maskable icons + service worker; SEO: metadata/JSON-LD/sitemap/robots/OG
 - 📖 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) · [SECURITY.md](SECURITY.md)
+
+### Launch checklist (ก่อนเปิดใช้งานจริง)
+
+1. `NEXT_PUBLIC_SITE_URL` = domain จริง (ไฟล์ `frontend/.env.local`) — ตอนนี้เป็น placeholder
+2. `SOLVEN_API_TOKEN` = random ≥32 chars ทั้ง backend และ frontend (secret manager)
+3. Deploy ตาม `docs/DEPLOYMENT.md` — TLS, CORS origins จริง, `python -m app.migrate`
+4. ตรวจสอบตัวเลข/ข้อมูลใน `docs/jump-2026-application.md` (PISA/TDRI อ้างอิง) ก่อนส่งประกวด
+5. ทดสอบ E2E กับ pilot กลุ่มเล็ก (10-20 ครู) ก่อน scale
