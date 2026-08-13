@@ -36,7 +36,22 @@
 | LearnDi adapter (ARCH-14) | No external contract exists — documented as discovery-first. |
 | Minor: SW-flush token-only-edge limitation, purge of crash-orphaned tasks, inline-comment `--` in migrations, `handlers[0]` brittleness | Reviewed as Minor; tracked in this document. |
 
+## Additional backend production-readiness batch (2026-08-14, commit f1af2f1)
+
+| Item | What landed | Evidence |
+|---|---|---|
+| T2-04 SQLite WAL/busy_timeout | WAL + busy_timeout=5000 + connect timeout for file DBs | `test_file_db_uses_wal_and_busy_timeout` |
+| DEV-06 migrate CLI | Real argparse: `python -m app.migrate --db <path>` (+ legacy positional + `:memory:`) — the documented `--db` flag previously did nothing | 3 CLI tests; live run on dev DB |
+| T1-09 orphan purge | Crash-orphaned tasks (no draft, older than retention) now purged with their runs | `test_purge_removes_crash_orphaned_tasks` |
+| SEC-L-02 | `/docs`, `/redoc`, `/openapi.json` disabled in production | prod 404 tests, dev 200 |
+| SEC-L-01 | `x-request-id` validated (bounded `[A-Za-z0-9._:-]{1,64}`), else fresh id — no log injection | 2 tests |
+| Logging brittleness | Root logger configured explicitly (no `handlers[0]` assumption) | suite green |
+| T2-07 (partial) | `requirements.txt` exact-pinned to tested venv; backend Dockerfile runs as non-root `solven` user with `/data` ownership | `pip check` clean; **Docker runtime build NOT verified (no local engine)** |
+
+Backend suite now **108 passed**.
+
 ## Assumptions made (user chose "everything incl. blocked" — flagged in code/docs)
+
 
 1. Identity: production uses an edge-injected principal header (OIDC/session edge); verified-strip requirement documented; demo uses `demo-teacher`.
 2. PDPA: retention 180 days (configurable); redaction patterns for synthetic/demo data — legal policy is owner decision.
