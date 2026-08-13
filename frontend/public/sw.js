@@ -22,6 +22,20 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   // API calls always go to network (never serve stale drafts)
   if (url.pathname.startsWith("/api/")) return;
+  // T1-06 (AUD-H-05): runtime-cache immutable Next.js build assets so a
+  // cold offline reload has the JS/CSS it needs to hydrate.
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(
+      caches.open(CACHE).then(async (cache) => {
+        const hit = await cache.match(event.request);
+        if (hit) return hit;
+        const res = await fetch(event.request);
+        if (res.ok) cache.put(event.request, res.clone());
+        return res;
+      })
+    );
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then((hit) => hit || fetch(event.request))
   );
@@ -66,7 +80,14 @@ async function flushOfflineQueue() {
   const db = await openQueueDb();
   const tasks = await listQueued(db);
   let flushed = 0;
+  const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // keep in sync with lib/offlineQueue.ts
   for (const task of tasks) {
+    // never replay stale queued student content (T1-05)
+    const created = new Date(task.createdAt).getTime();
+    if (Number.isNaN(created) || Date.now() - created > QUEUE_TTL_MS) {
+      await removeQueued(db, task.clientTaskId);
+      continue;
+    }
     try {
       const res = await fetch("/api/coordinator", {
         method: "POST",
