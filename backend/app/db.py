@@ -120,12 +120,13 @@ class Store:
         output: str,
         warnings: Optional[list[str]] = None,
         teacher_id: Optional[str] = None,
+        status: str = "pending",
     ) -> None:
         with self._c() as conn:
             conn.execute(
                 "INSERT INTO drafts (id, task_id, teacher_id, agent, input, output, status, warnings, created_at) "
-                "VALUES (?,?,?,?,?,?, 'pending', ?, ?)",
-                (draft_id, task_id, teacher_id, agent, input_text, output,
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (draft_id, task_id, teacher_id, agent, input_text, output, status,
                  _json(warnings or []), now_iso()),
             )
 

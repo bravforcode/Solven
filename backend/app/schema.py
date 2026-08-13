@@ -3,7 +3,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 AgentType = Literal["grading", "lesson-plan", "reporting"]
-DraftStatus = Literal["pending", "approved", "rejected"]
+DraftStatus = Literal["pending", "approved", "rejected", "quarantined"]
 
 
 class TaskRequest(BaseModel):

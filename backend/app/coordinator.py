@@ -42,6 +42,7 @@ class CoordState(TypedDict):
     passed: bool
     retries: int
     teacher_id: str | None
+    engine: str
 
 
 def _now():
@@ -104,10 +105,14 @@ def make_coordinator(store: Store, fail_closed: bool = False):
                 "created_at": _now(),
             }
         )
-        return {**state, "output": output}
+        return {
+            **state,
+            "output": output,
+            "engine": "mock" if model.startswith("mock") else "llm",
+        }
 
     def guardrail_node(state: CoordState) -> CoordState:
-        passed, warnings = guardrail.check(state["output"], state["input"])
+        passed, warnings = guardrail.check(state["output"], state["input"], state["agent"])
         # update audit row guardrail flag (latest run for this task)
         with store._c() as conn:
             conn.execute(
@@ -125,6 +130,15 @@ def make_coordinator(store: Store, fail_closed: bool = False):
         return {**state, "retries": state["retries"] + 1}
 
     def finalize(state: CoordState) -> dict:
+        # T1-07 (SEC-H-04): policy failures from a REAL provider are
+        # QUARANTINED, not returned as ordinary pending drafts — the teacher
+        # must consciously review them. The deterministic demo mock is exempt
+        # (explicitly demo-only; production preflight blocks mock entirely).
+        status = (
+            "quarantined"
+            if (not state["passed"] and state.get("engine") != "mock")
+            else "pending"
+        )
         store.add_draft(
             draft_id=str(uuid.uuid4()),
             task_id=state["task_id"],
@@ -133,6 +147,7 @@ def make_coordinator(store: Store, fail_closed: bool = False):
             output=state["output"],
             warnings=state["warnings"],
             teacher_id=state.get("teacher_id"),
+            status=status,
         )
         store.set_task_state(state["task_id"], "draft_ready")
         return {}
@@ -188,6 +203,8 @@ def run_task(
         "passed": True,
         "retries": 0,
         "teacher_id": teacher_id,
+        # run_agent always overwrites with the actual engine before finalize
+        "engine": "mock",
     }
     make_coordinator(store, fail_closed=fail_closed).invoke(state)
     drafts = [d for d in store.list_drafts() if d["task_id"] == task_id]
