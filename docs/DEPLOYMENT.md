@@ -28,6 +28,11 @@ docker compose up --build -d
 # ตรวจ preflight ใน container: docker compose run --rm -e NEXT_PUBLIC_SITE_URL=https://... backend python -m app.preflight
 ```
 
+> ⚠️ **compose นี้ build แบบ strict (ไม่มี `NEXT_PUBLIC_SOLVEN_MODE=demo`)** — BFF จะ
+> require `x-solven-principal` header (edge contract ข้อ 4) ทุกรอบ: ทดสอบผ่าน curl ต้องส่ง
+> `-H "x-solven-principal: demo-teacher"`. ถ้าต้องการ demo แบบไม่ต้อง edge ให้ build
+> frontend ใหม่โดยตั้ง `NEXT_PUBLIC_SOLVEN_MODE=demo` (build-time) — อย่าใช้ mode นั้นกับ production
+
 ### 2b. แยก service (production จริง)
 
 ```bash
