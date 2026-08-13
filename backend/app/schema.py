@@ -30,6 +30,8 @@ class DraftOut(BaseModel):
     status: DraftStatus
     warnings: list[str] = []
     createdAt: str
+    teacherId: Optional[str] = None
+    reviewedBy: Optional[str] = None
 
 
 class PatchDraft(BaseModel):

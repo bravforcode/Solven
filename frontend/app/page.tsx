@@ -643,29 +643,71 @@ export default function Home() {
     if (submitting) return;
     setSubmitting(true);
     let created = 0;
+    let fullStates = false; // true only when the backend full dataset was used
     try {
-      for (const task of DEMO_TASKS) {
-        const res = await fetch("/api/coordinator", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(task),
-        });
-        if (res.ok) created++;
+      // full demo dataset from the backend (drafts across all states + audit runs)
+      try {
+        const res = await fetch("/api/demo/seed", { method: "POST" });
+        if (res.ok) {
+          const body = (await res.json()) as { seeded?: number };
+          created = body.seeded ?? 0;
+          fullStates = created > 0;
+        } else if (res.status !== 404 && res.status !== 401) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        // 404/401 (no demo endpoint in this deployment) → fall through to local
+      } catch {
+        // backend unreachable → fall through to the local pipeline-driven seeds
+      }
+      if (created === 0) {
+        // local fallback: each task submitted independently so one failure
+        // does not abort the whole seed (I-1)
+        for (const task of DEMO_TASKS) {
+          try {
+            const res = await fetch("/api/coordinator", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(task),
+            });
+            if (res.ok) created++;
+          } catch {
+            /* per-task failure — continue with the rest */
+          }
+        }
+      }
+      // seed rubric presets once (localStorage) so forms show real examples
+      try {
+        const existing = loadPresets();
+        if (existing.length <= 1) {
+          const demoPresets: RubricPreset[] = [
+            { name: "วิชาไทย ม.2 — เรียงความ", text: "โครงสร้างครบ (นำ/เนื้อ/สรุป) = 4\nภาษาเรียบเรียงดี = 3\nสะกดถูกต้อง = 2\nรวม 9 คะแนน" },
+            { name: "คณิต ป.5 — เศษส่วน", text: "วิธีทำถูกต้อง = 3\nคำตอบถูก = 2\nแสดงเหตุผล = 1\nรวม 6 คะแนน" },
+          ];
+          window.localStorage.setItem(
+            PRESETS_KEY,
+            JSON.stringify(demoPresets)
+          );
+          setPresets(loadPresets());
+        }
+      } catch {
+        /* localStorage unavailable — presets stay default */
       }
       await loadDrafts();
       pushToast(
         created > 0 ? "success" : "error",
         created > 0
-          ? `โหลดข้อมูลตัวอย่างแล้ว ${created} รายการ — ทุกชิ้นเป็นข้อมูลสมมติ ตรวจและอนุมัติได้เลย`
+          ? fullStates
+            ? `โหลดข้อมูลตัวอย่างแล้ว ${created} รายการ (ครบทุกสถานะ: รอตรวจ/อนุมัติ/ปฏิเสธ/กักกัน) — ตรวจและอนุมัติได้เลย`
+            : `โหลดข้อมูลตัวอย่างแล้ว ${created} รายการ (ผ่าน pipeline จริง) — ตรวจและอนุมัติได้เลย`
           : "โหลดข้อมูลตัวอย่างไม่สำเร็จ — ตรวจ backend ก่อน"
       );
-      setView("queue");
+      if (created > 0) setView("queue");
     } catch (err) {
       pushToast("error", `โหลดข้อมูลตัวอย่างล้มเหลว: ${err instanceof Error ? err.message : err}`);
     } finally {
       setSubmitting(false);
     }
-  }, [submitting, loadDrafts, pushToast]);
+  }, [submitting, loadDrafts, pushToast, setPresets]);
 
   function exportApproved() {
     const approved = drafts.filter((d) => d.status === "approved");

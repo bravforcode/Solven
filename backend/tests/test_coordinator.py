@@ -129,7 +129,9 @@ def test_dev_still_falls_back_to_mock_on_provider_error(monkeypatch):
     draft = run_task(store, "grading", "input", fail_closed=False)
     assert draft["status"] == "pending"
     runs = store.list_runs()
-    assert runs and runs[-1]["status"] == "fallback-mock"
+    # the fallback-mock path must be recorded in the audit trail (retries after
+    # a successful fallback legitimately record "completed", so check ANY run)
+    assert runs and any(r["status"] == "fallback-mock" for r in runs)
 
 
 def test_submit_grading_creates_pending_draft(client):

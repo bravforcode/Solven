@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import Settings
 from app.coordinator import FailClosedError, InFlightError, TaskNotOwnedError, run_task
 from app.db import DB_PATH, Store
+from app.seed import seed_demo
 from app.middleware import (
     RateLimitMiddleware,
     RequestContextMiddleware,
@@ -143,6 +144,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             status=d["status"],
             warnings=json.loads(d.get("warnings") or "[]"),
             createdAt=d["created_at"],
+            teacherId=d.get("teacher_id"),
+            reviewedBy=d.get("reviewed_by"),
         )
 
     @app.get("/health", tags=["ops"])
@@ -222,6 +225,19 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             raise HTTPException(403, "not your draft")
         store.delete_draft(draft_id)
         return {"deleted": draft_id}
+
+    @app.post("/api/demo/seed", dependencies=[require_token], tags=["demo"])
+    def demo_seed(request: Request) -> dict:
+        """Populate the deterministic demo dataset (dev/demo only).
+
+        Hard 404 in production: the demo endpoint must not exist on a real
+        deployment (same security stance as mock LLM — fail closed).
+        """
+        if settings.env == "production":
+            raise HTTPException(404, "not found")
+        principal = _principal(request, settings)
+        seeded = seed_demo(store, principal["teacher_id"])
+        return {"seeded": seeded}
 
     @app.get("/api/audit", dependencies=[require_token], tags=["api"])
     def audit(task_id: Optional[str] = None, request: Request = None,
