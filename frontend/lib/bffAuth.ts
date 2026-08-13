@@ -15,6 +15,11 @@ export interface Principal {
   tenant?: string;
 }
 
+/** True when the local demo identity is in use (build-time constant). */
+export function isDemoMode(): boolean {
+  return DEMO_MODE;
+}
+
 export function requirePrincipal(req: NextRequest):
   | { ok: true; principal: Principal }
   | { ok: false; response: NextResponse } {
