@@ -64,11 +64,21 @@ export async function runAgent(
         input,
         output: localMock(agent, input),
         status: "pending",
-        warnings: ["รันด้วย mock ในเครื่อง (ไม่พบ backend)"],
+        warnings: ["รันด้วย mock ในเครื่อง (ไม่พบ backend)", ...mockGuardrailWarnings(localMock(agent, input))],
         createdAt: new Date().toISOString(),
       },
     };
   }
+}
+
+/** Mirror of backend guardrail.py PII rules so the offline/mock demo shows real trust signals. */
+export function mockGuardrailWarnings(output: string): string[] {
+  const warnings: string[] = [];
+  if (/0\d{8,9}(?!\d)/.test(output)) warnings.push("ตรวจพบเบอร์โทรในผลลัพธ์ — ควรตัดออกก่อนใช้งาน");
+  if (/\d{13}(?!\d)/.test(output)) warnings.push("ตรวจพบเลขบัตรประชาชนในผลลัพธ์ — ควรตัดออกก่อนใช้งาน");
+  if (/[\w.+-]+@[\w-]+\.[\w.-]+/.test(output)) warnings.push("ตรวจพบอีเมลในผลลัพธ์ — ควรตัดออกก่อนใช้งาน");
+  if (!/ร่าง|ตรวจทาน/.test(output)) warnings.push("ผลลัพธ์ไม่มีข้อความเตือนว่าเป็นร่าง (human-in-the-loop)");
+  return warnings;
 }
 
 export async function patchDraft(
