@@ -257,3 +257,12 @@ git commit -m "docs: README UI features + DESIGN.md Tailwind token layer"
 
 - [ ] **Step 1: ตรวจ `git log` + `git status` สะอาด; เปิด dev server ให้ผู้ใช้ preview (http://localhost:3000)**
 - [ ] **Step 2: Report สรุป: ฟีเจอร์ที่ทำ + evidence (typecheck/build/pytest output + QA checklist) + ความเสี่ยงคงค้าง**
+
+---
+
+## Deviation Log (บันทึก ณ สิ้นงาน — ทุกข้ออนุมัติแล้วในการ review)
+
+1. **Task 1** — ไม่ได้ย้าย CSS เดิมเข้า `@layer base/components` (เก็บ unlayered ทั้งหมด) เพราะ cascade ของ unlayered ชนะ Tailwind preflight → selector เดิม match JSX เดิมเป๊ะ ไม่มีความเสี่ยง regression; เพิ่มเฉพาะ `@theme inline` + `@layer utilities` (commit 7c900a7, reviewer 5/5 PASS)
+2. **Task 3 undo** — ขยาย `frontend/app/api/drafts/[id]/route.ts` ให้ accept `"pending"` (additive; approved/rejected เดิมไม่เปลี่ยน; mirror ไป backend ยังทำเฉพาะ final states; FastAPI ไม่แตะ) — จำเป็นเพื่อให้ "เลิกทำ" ทำงานจริง (commit 19b4c4d, auditor ประเมิน ADDITIVE/SAFE)
+3. **Task 2 SortSelect** — spec §7 ระบุเป็น component ใหม่ แต่ implement เป็น `select.sort-select` inline ใน page.tsx + utility class (น้อยโค้ด, F5 ผ่าน review)
+4. **Node/PATH** — shell นี้ไม่มี node ใน PATH ต้องใช้ full path `C:\Program Files\nodejs\npm.cmd` + `$env:Path` prefix; อย่าเปิด `npm run build` ขณะ dev server รัน (ทับ `.next` → dev ต้อง restart + ลบ `.next`)
