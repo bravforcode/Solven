@@ -24,7 +24,30 @@ from app.migrate import apply_migrations
 from app.schema import DraftOut, PatchDraft, RunRecord, TaskRequest
 from app.security import auth_dependency
 
+class JsonFormatter(logging.Formatter):
+    """One JSON object per line (T2-09 / AUD-M-12): request context fields are
+    included when the middleware passes them via logging `extra`."""
+
+    _CONTEXT_KEYS = ("request_id", "method", "path", "status", "duration_ms")
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict = {
+            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        for key in self._CONTEXT_KEYS:
+            value = getattr(record, key, None)
+            if value is not None:
+                payload[key] = value
+        if record.exc_info:
+            payload["exc"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logging.getLogger().handlers[0].setFormatter(JsonFormatter())
 
 VALID_AGENTS = {"grading", "lesson-plan", "reporting"}
 
@@ -164,11 +187,13 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return _to_out(draft)
 
     @app.get("/api/drafts", dependencies=[require_token], tags=["api"])
-    def list_drafts(request: Request) -> list[DraftOut]:
+    def list_drafts(request: Request, limit: int = 100, offset: int = 0) -> list[DraftOut]:
         principal = _principal(request, settings)
         # production: drafts are scoped to the authenticated teacher
         teacher_id = principal["teacher_id"] if settings.env == "production" else None
-        return [_to_out(d) for d in store.list_drafts(teacher_id=teacher_id)]
+        limit = max(1, min(limit, 500))  # bounded page size (AUD-M-02)
+        offset = max(0, offset)
+        return [_to_out(d) for d in store.list_drafts(teacher_id=teacher_id, limit=limit, offset=offset)]
 
     @app.patch("/api/drafts/{draft_id}", dependencies=[require_token], tags=["api"])
     def patch_draft(draft_id: str, body: PatchDraft, request: Request) -> DraftOut:
@@ -199,13 +224,16 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return {"deleted": draft_id}
 
     @app.get("/api/audit", dependencies=[require_token], tags=["api"])
-    def audit(task_id: Optional[str] = None, request: Request = None) -> list[RunRecord]:
+    def audit(task_id: Optional[str] = None, request: Request = None,
+              limit: int = 100, offset: int = 0) -> list[RunRecord]:
         """agent_runs audit trail (Appendix A.7) — tenant-scoped in production."""
+        limit = max(1, min(limit, 500))
+        offset = max(0, offset)
         if settings.env == "production":
             principal = _principal(request, settings)
-            runs = store.list_runs_for_teacher(principal["teacher_id"])
+            runs = store.list_runs_for_teacher(principal["teacher_id"], limit=limit, offset=offset)
         else:
-            runs = store.list_runs(task_id)
+            runs = store.list_runs(task_id, limit=limit, offset=offset)
         return [RunRecord(**r) for r in runs]
 
     return app

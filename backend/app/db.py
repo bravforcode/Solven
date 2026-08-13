@@ -135,15 +135,19 @@ class Store:
                  _json(warnings or []), now_iso()),
             )
 
-    def list_drafts(self, teacher_id: Optional[str] = None) -> list[dict]:
+    def list_drafts(self, teacher_id: Optional[str] = None,
+                    limit: int = 100, offset: int = 0) -> list[dict]:
         with self._c() as conn:
             if teacher_id:
                 rows = conn.execute(
-                    "SELECT * FROM drafts WHERE teacher_id=? ORDER BY created_at DESC",
-                    (teacher_id,),
+                    "SELECT * FROM drafts WHERE teacher_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (teacher_id, limit, offset),
                 ).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM drafts ORDER BY created_at DESC").fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM drafts ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                ).fetchall()
         return [dict(r) for r in rows]
 
     def get_draft(self, draft_id: str) -> Optional[dict]:
@@ -172,23 +176,30 @@ class Store:
                  1 if run["guardrail_passed"] else 0, run["created_at"]),
             )
 
-    def list_runs(self, task_id: Optional[str] = None) -> list[dict]:
+    def list_runs(self, task_id: Optional[str] = None,
+                  limit: int = 100, offset: int = 0) -> list[dict]:
         with self._c() as conn:
             if task_id:
-                rows = conn.execute("SELECT * FROM agent_runs WHERE task_id=? ORDER BY created_at",
-                                    (task_id,)).fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM agent_runs WHERE task_id=? ORDER BY created_at LIMIT ? OFFSET ?",
+                    (task_id, limit, offset),
+                ).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM agent_runs ORDER BY created_at DESC").fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                ).fetchall()
         return [dict(r) for r in rows]
 
-    def list_runs_for_teacher(self, teacher_id: str) -> list[dict]:
+    def list_runs_for_teacher(self, teacher_id: str,
+                              limit: int = 100, offset: int = 0) -> list[dict]:
         """Audit runs scoped to one teacher via the owning task (AUD-H-01 / I2)."""
         with self._c() as conn:
             rows = conn.execute(
                 "SELECT r.* FROM agent_runs r "
                 "JOIN tasks t ON t.id = r.task_id "
-                "WHERE t.teacher_id = ? ORDER BY r.created_at DESC",
-                (teacher_id,),
+                "WHERE t.teacher_id = ? ORDER BY r.created_at DESC LIMIT ? OFFSET ?",
+                (teacher_id, limit, offset),
             ).fetchall()
         return [dict(r) for r in rows]
 
