@@ -1,28 +1,24 @@
 import { AgentType, Draft } from "./types";
 
-// Try the real Solven backend first (Appendix A architecture); fall back to
-// the deterministic local mock so the demo always works (e.g. demo without
-// the Python server running). The engine actually used is returned honestly
-// and displayed in the UI.
+// Try the real Solven backend first (Appendix A architecture). Production
+// (default) fails closed: backend errors surface as errors and never create a
+// draft. The deterministic local mock is available ONLY when
+// NEXT_PUBLIC_SOLVEN_MODE=demo (build-time constant for NEXT_PUBLIC_* vars).
 
 const API_URL =
   process.env.NEXT_PUBLIC_SOLVEN_API_URL ?? "http://localhost:8000";
 
 // Demo mode is the ONLY mode that may fabricate local mock drafts when the
-// backend is unreachable. Production (default) fails closed: backend errors
-// surface as errors and never create a draft.
+// backend is unreachable.
 const DEMO_MODE = process.env.NEXT_PUBLIC_SOLVEN_MODE === "demo";
 
 // Bearer token for the backend — server-side only (Next.js API routes).
 // Never shipped to the browser.
 const API_TOKEN = process.env.SOLVEN_API_TOKEN ?? "";
 
-export interface RunResult {
-  draft?: Draft; // absent when ok=false (production backend failure)
-  engine: "backend" | "mock";
-  ok: boolean;
-  error?: string;
-}
+export type RunResult =
+  | { ok: true; engine: "backend" | "mock"; draft: Draft; error?: string }
+  | { ok: false; error: string };
 
 export async function runAgent(
   agent: AgentType,
@@ -64,7 +60,7 @@ export async function runAgent(
     const message = err instanceof Error ? err.message : String(err);
     if (!DEMO_MODE) {
       // fail closed: surface backend failure, never fabricate a draft
-      return { ok: false, engine: "mock", error: message };
+      return { ok: false, error: message };
     }
     // local fallback: deterministic mock, same shape (demo mode only)
     return {

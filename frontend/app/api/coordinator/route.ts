@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { runAgent } from "@/lib/backend";
 import { addDraft } from "@/lib/store";
-import { AgentType, Draft } from "@/lib/types";
+import { AgentType } from "@/lib/types";
 
 const VALID_AGENTS: AgentType[] = ["grading", "lesson-plan", "reporting"];
 
@@ -40,8 +40,8 @@ export async function POST(req: NextRequest) {
     );
   }
   const draft = {
-    ...(result.draft as Draft),
-    id: result.engine === "backend" ? result.draft!.id : randomUUID(),
+    ...result.draft,
+    id: result.engine === "backend" ? result.draft.id : randomUUID(),
     engine: result.engine,
   };
   addDraft({ ...draft, warnings: draft.warnings ?? [] });
