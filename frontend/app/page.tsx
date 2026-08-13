@@ -4,22 +4,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_LABEL, AgentType, Draft } from "@/lib/types";
 import { enqueueTask, flushQueue, listQueuedTasks, QueuedTask } from "@/lib/offlineQueue";
 import CountUp from "@/components/reactbits/CountUp";
+import Button from "@/components/ui/Button";
+import Checkbox from "@/components/ui/Checkbox";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import CommandPalette from "@/components/ui/CommandPalette";
+import Drawer from "@/components/ui/Drawer";
+import { useToast, ToastType, ToastOptions } from "@/components/ui/ToastProvider";
+import { buildCommands, CommandItem } from "@/lib/commands";
+import { useSelection, useShortcuts, useMediaQuery } from "@/lib/hooks";
+import { applyBatch, patchDraftStatus } from "@/lib/drafts";
 
 /* ============ types & constants ============ */
 
 type View = "create" | "queue";
 type StatusFilter = "all" | Draft["status"];
-type ToastType = "success" | "error" | "info";
-
-interface Toast {
-  id: number;
-  type: ToastType;
-  text: string;
-}
+type SortOrder = "newest" | "oldest" | "agent";
 
 interface RubricPreset {
   name: string;
   text: string;
+}
+
+interface ConfirmState {
+  kind: "reject" | "reject-batch" | "delete-preset";
+  id?: string;
+  name?: string;
+  warnings?: string[];
+  count?: number;
 }
 
 const AGENT_OPTIONS: AgentType[] = ["grading", "lesson-plan", "reporting"];
@@ -236,16 +247,24 @@ export default function Home() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [agentFilter, setAgentFilter] = useState<"all" | AgentType>("all");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortOrder>("newest");
 
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const toastId = useRef(0);
+  // new-feature state
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [drawerDraft, setDrawerDraft] = useState<Draft | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
-  /* ----- toasts ----- */
-  const pushToast = useCallback((type: ToastType, text: string) => {
-    const id = ++toastId.current;
-    setToasts((t) => [...t, { id, type, text }]);
-    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
-  }, []);
+  const { push } = useToast();
+  const pushToast = useCallback(
+    (type: ToastType, text: string, opts?: ToastOptions) => push(type, text, opts),
+    [push]
+  );
+
+  const isMobile = useMediaQuery("(max-width: 900px)");
+  const isDesktop = useMediaQuery("(min-width: 900px)");
 
   /* ----- drafts ----- */
   const loadDrafts = useCallback(async () => {
@@ -449,21 +468,98 @@ export default function Home() {
     }
   }
 
-  /* ----- review actions ----- */
+  /* ----- review actions (single + undo) ----- */
   async function setDraftStatus(id: string, status: "approved" | "rejected") {
+    if (busyId) return;
+    setBusyId(id);
     try {
-      const res = await fetch(`/api/drafts/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const updated = (await res.json()) as Draft;
+      const updated = await patchDraftStatus(id, status);
+      if (!updated) throw new Error("HTTP");
       setDrafts((ds) => ds.map((d) => (d.id === id ? updated : d)));
-      pushToast("success", status === "approved" ? "อนุมัติแล้ว" : "ปฏิเสธแล้ว");
+      setFlashId(id);
+      const label = status === "approved" ? "อนุมัติ" : "ปฏิเสธ";
+      pushToast("success", `${label}แล้ว`, {
+        actionLabel: "เลิกทำ",
+        onAction: () => {
+          patchDraftStatus(id, "pending").then((u) => {
+            if (u) {
+              setDrafts((ds) => ds.map((d) => (d.id === id ? u : d)));
+              pushToast("info", "เลิกทำแล้ว");
+            }
+          });
+        },
+      });
     } catch (err) {
       pushToast("error", `ไม่สามารถอัปเดตได้: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setBusyId(null);
     }
+  }
+
+  function handleReject(d: Draft) {
+    if (d.warnings.length > 0) {
+      setConfirm({ kind: "reject", id: d.id, warnings: d.warnings });
+    } else {
+      setDraftStatus(d.id, "rejected");
+    }
+  }
+
+  /* ----- batch actions ----- */
+  const resetFilters = useCallback(() => {
+    setStatusFilter("all");
+    setAgentFilter("all");
+    setSearch("");
+    setSort("newest");
+  }, []);
+
+  async function undoBatch(targets: Draft[], status: "approved" | "rejected") {
+    let n = 0;
+    for (const d of targets) {
+      const u = await patchDraftStatus(d.id, "pending");
+      if (u) {
+        n++;
+        setDrafts((ds) => ds.map((x) => (x.id === d.id ? u : x)));
+      }
+    }
+    if (n > 0) pushToast("info", `เลิกทำ ${n} รายการแล้ว (กลับเป็นรออนุมัติ)`);
+  }
+
+  async function doBatch(status: "approved" | "rejected", targets: Draft[]) {
+    setBulkBusy(true);
+    try {
+      const { ok, fail } = await applyBatch(targets, status);
+      selection.clear();
+      await loadDrafts();
+      if (ok > 0) {
+        const verb = status === "approved" ? "อนุมัติ" : "ปฏิเสธ";
+        pushToast("success", ok === 1 ? `${verb} 1 รายการแล้ว` : `${verb} ${ok} รายการแล้ว`, {
+          actionLabel: "เลิกทำ",
+          onAction: () => undoBatch(targets, status),
+        });
+      }
+      if (fail.length > 0) {
+        pushToast("error", `ไม่สำเร็จ ${fail.length} รายการ (HTTP error) — ลองใหม่`);
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  function handleBatch(status: "approved" | "rejected") {
+    const targets = filtered.filter((d) => d.status === "pending" && selection.selected.has(d.id));
+    if (targets.length === 0) return;
+    if (status === "rejected") {
+      const withWarnings = targets.filter((d) => d.warnings.length > 0);
+      if (withWarnings.length > 0) {
+        setConfirm({
+          kind: "reject-batch",
+          count: withWarnings.length,
+          warnings: withWarnings.flatMap((d) => d.warnings).slice(0, 5),
+        });
+        return;
+      }
+    }
+    doBatch(status, targets);
   }
 
   async function handleCopy(d: Draft) {
@@ -547,12 +643,17 @@ export default function Home() {
     pushToast("success", `บันทึก rubric "${name}" แล้ว`);
   }
 
-  function deletePreset(name: string) {
+  function doDeletePreset(name: string) {
     if (name === DEFAULT_PRESET.name) return;
     const next = presets.filter((p) => p.name !== name);
     setPresets(next);
     window.localStorage.setItem(PRESETS_KEY, JSON.stringify(next.filter((p) => p.name !== DEFAULT_PRESET.name)));
     pushToast("info", `ลบ "${name}" แล้ว`);
+  }
+
+  function requestDeletePreset() {
+    const sel = (document.getElementById("preset-select") as HTMLSelectElement)?.value;
+    if (sel && sel !== DEFAULT_PRESET.name) setConfirm({ kind: "delete-preset", name: sel });
   }
 
   function applyPreset(name: string) {
@@ -578,10 +679,65 @@ export default function Home() {
     });
   }, [drafts, statusFilter, agentFilter, search]);
 
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    if (sort === "oldest") {
+      arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    } else if (sort === "agent") {
+      arr.sort((a, b) => AGENT_LABEL[a.agent].localeCompare(AGENT_LABEL[b.agent], "th"));
+    }
+    return arr;
+  }, [filtered, sort]);
+
+  const selection = useSelection(
+    filtered.map((d) => d.id),
+    `${statusFilter}|${agentFilter}|${search}|${sort}|${drafts.length}`
+  );
+
   const canSubmit =
     agent === "grading" ? input.trim().length > 0 :
     agent === "lesson-plan" ? topic.trim().length > 0 :
     summary.trim().length > 0;
+
+  /* ----- command palette ----- */
+  const paletteItems = useMemo<CommandItem[]>(
+    () =>
+      buildCommands({
+        goCreate: (a) => {
+          setFormError("");
+          if (a) setAgent(a);
+          setView("create");
+        },
+        goQueue: () => setView("queue"),
+        setStatusFilter: (s) => setStatusFilter(s),
+        setAgentFilter: (a) => setAgentFilter(a),
+        resetFilters,
+        seedDemo: () => {
+          setView("queue");
+          seedDemoData();
+        },
+      }),
+    [resetFilters]
+  );
+
+  /* ----- keyboard shortcuts (desktop only) ----- */
+  const focusSearch = useCallback(() => {
+    document.querySelector<HTMLInputElement>('input[aria-label="ค้นหา"]')?.focus();
+  }, []);
+  const focusAnswers = useCallback(() => {
+    document.getElementById("answers")?.focus();
+  }, []);
+
+  useShortcuts(
+    {
+      goCreate: () => setView("create"),
+      goQueue: () => setView("queue"),
+      focusSearch,
+      focusAnswers,
+      openPalette: () => setPaletteOpen(true),
+    },
+    isDesktop
+  );
 
   /* ============ render ============ */
 
@@ -607,6 +763,69 @@ export default function Home() {
     </>
   );
 
+  const draftActions = (d: Draft) => (
+    <>
+      {d.status === "pending" && (
+        <>
+          <Button
+            size="sm"
+            loading={busyId === d.id}
+            success={flashId === d.id}
+            onSuccessDone={() => setFlashId(null)}
+            onClick={() => setDraftStatus(d.id, "approved")}
+          >
+            อนุมัติ
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            loading={busyId === d.id}
+            onClick={() => handleReject(d)}
+          >
+            ปฏิเสธ
+          </Button>
+        </>
+      )}
+      <span className="spacer" />
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        onClick={() => handleCopy(d)}
+        title="คัดลอกผลลัพธ์"
+      >
+        <Icon d={ICON_COPY} size={14} /> คัดลอก
+      </button>
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        onClick={() => downloadDraft(d)}
+        title="ดาวน์โหลดเป็นไฟล์ .txt"
+      >
+        <Icon d={ICON_DOWNLOAD} size={14} /> ดาวน์โหลด
+      </button>
+    </>
+  );
+
+  const draftBadge = (d: Draft) => (
+    <span
+      className={`badge ${
+        d.status === "pending"
+          ? "badge-pending"
+          : d.status === "approved"
+          ? "badge-approved"
+          : "badge-rejected"
+      }`}
+    >
+      {d.status === "pending"
+        ? "รออนุมัติ"
+        : d.status === "approved"
+        ? "อนุมัติแล้ว"
+        : "ปฏิเสธ"}
+    </span>
+  );
+
+  const visiblePendingIds = sorted.filter((d) => d.status === "pending").map((d) => d.id);
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -628,6 +847,9 @@ export default function Home() {
             <span className={`engine-dot ${engine ? "on" : ""}`} />
             {engine ? (engine === "backend" ? "Solven backend" : "mock ในเครื่อง") : "กำลังเชื่อมต่อ..."}
           </span>
+          <span className="kbd-hint">
+            <kbd>⌘K</kbd> คำสั่งลัด
+          </span>
           <span>v0.2.0 · JUMP THAILAND 2026</span>
         </div>
       </aside>
@@ -641,6 +863,16 @@ export default function Home() {
             <p className="page-sub">{VIEW_TITLES[view].sub}</p>
           </div>
           <div className="topbar-actions">
+            {isDesktop && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setPaletteOpen(true)}
+                title="คำสั่งลัด (⌘K / Ctrl+K)"
+              >
+                <kbd style={{ fontFamily: "inherit" }}>⌘K</kbd>
+              </button>
+            )}
             <span className="avatar" title="ผู้ใช้ (ตัวอย่าง)" aria-hidden="true">
               ท
             </span>
@@ -699,17 +931,9 @@ export default function Home() {
                           ))}
                         </select>
                       </div>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        title="ลบ preset ที่เลือก"
-                        onClick={() => {
-                          const sel = (document.getElementById("preset-select") as HTMLSelectElement)?.value;
-                          if (sel) deletePreset(sel);
-                        }}
-                      >
+                      <Button type="button" variant="secondary" onClick={requestDeletePreset}>
                         ลบ
-                      </button>
+                      </Button>
                     </div>
 
                     <div className="field">
@@ -733,9 +957,9 @@ export default function Home() {
                           onChange={(e) => setPresetName(e.target.value)}
                           style={{ maxWidth: 320 }}
                         />
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={savePreset}>
+                        <Button type="button" variant="ghost" size="sm" onClick={savePreset}>
                           บันทึกเป็น rubric สำเร็จรูป
-                        </button>
+                        </Button>
                       </div>
                     </div>
 
@@ -798,18 +1022,18 @@ export default function Home() {
                           onChange={(e) => setStudents(e.target.value)}
                         />
                       </div>
-                      <div className="field">
-                        <label className="field-label" htmlFor="duration">
-                          เวลาที่มี
-                        </label>
-                        <select id="duration" className="select" value={duration} onChange={(e) => setDuration(e.target.value)}>
-                          {DURATIONS.map((d) => (
-                            <option key={d} value={d}>
-                              {d}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="duration">
+                        เวลาที่มี
+                      </label>
+                      <select id="duration" className="select" value={duration} onChange={(e) => setDuration(e.target.value)}>
+                        {DURATIONS.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </>
                 )}
@@ -864,10 +1088,11 @@ export default function Home() {
                 )}
 
                 <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                  <button
+                  <Button
                     type="submit"
-                    className="btn btn-primary btn-full"
-                    disabled={submitting || !canSubmit}
+                    size="full"
+                    loading={submitting}
+                    disabled={!canSubmit}
                   >
                     {submitting
                       ? progress
@@ -876,7 +1101,7 @@ export default function Home() {
                       : agent === "grading"
                       ? `ส่งให้ Coordinator${splitAnswers(input).length > 1 ? ` (${splitAnswers(input).length} คน)` : ""}`
                       : "ส่งให้ Coordinator"}
-                  </button>
+                  </Button>
                 </div>
                 {formError && (
                   <p role="alert" style={{ color: "var(--danger)", fontSize: "0.82rem", marginTop: 10 }}>
@@ -951,6 +1176,16 @@ export default function Home() {
                     </option>
                   ))}
                 </select>
+                <select
+                  className="select sort-select"
+                  aria-label="เรียงลำดับ"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as SortOrder)}
+                >
+                  <option value="newest">ใหม่สุด</option>
+                  <option value="oldest">เก่าสุด</option>
+                  <option value="agent">งาน A-Z</option>
+                </select>
                 <input
                   className="input"
                   aria-label="ค้นหา"
@@ -958,17 +1193,61 @@ export default function Home() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                <span className="result-count" aria-live="polite">
+                  แสดง {sorted.length} จาก {drafts.length} รายการ
+                </span>
                 {approvedCount > 0 && (
-                  <button
+                  <Button
                     type="button"
-                    className="btn btn-secondary btn-sm"
+                    variant="secondary"
+                    size="sm"
                     onClick={exportApproved}
                     title="ดาวน์โหลดงานที่อนุมัติแล้วเป็นไฟล์ .md"
                   >
                     ส่งออกที่อนุมัติ ({approvedCount})
-                  </button>
+                  </Button>
                 )}
               </div>
+
+              {pendingCount > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <Checkbox
+                    checked={selection.allSelected}
+                    indeterminate={selection.indeterminate}
+                    onChange={() => selection.toggleAll(visiblePendingIds)}
+                    label="เลือกทั้งหมด (เฉพาะรายการที่แสดง)"
+                  />
+                  <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
+                    เลือกทั้งหมด ({visiblePendingIds.length} รายการที่แสดง)
+                  </span>
+                </div>
+              )}
+
+              {selection.count > 0 && (
+                <div className="bulk-bar">
+                  <span className="bulk-count">เลือก {selection.count} รายการ</span>
+                  <Button
+                    size="sm"
+                    loading={bulkBusy}
+                    disabled={selection.count === 0}
+                    onClick={() => handleBatch("approved")}
+                  >
+                    อนุมัติทั้งหมด
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    loading={bulkBusy}
+                    disabled={selection.count === 0}
+                    onClick={() => handleBatch("rejected")}
+                  >
+                    ปฏิเสธทั้งหมด
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={selection.clear}>
+                    ยกเลิก
+                  </Button>
+                </div>
+              )}
 
               {draftsLoading ? (
                 <div className="draft-list">
@@ -981,9 +1260,9 @@ export default function Home() {
                   <div className="empty-icon">⚠️</div>
                   <div className="empty-title">โหลดคิวไม่สำเร็จ</div>
                   <p className="empty-text">{draftsError} — ตรวจสอบว่า backend/เซิร์ฟเวอร์ทำงานอยู่</p>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={loadDrafts}>
+                  <Button size="sm" onClick={loadDrafts}>
                     ลองใหม่
-                  </button>
+                  </Button>
                 </div>
               ) : drafts.length === 0 ? (
                 <div className="empty">
@@ -994,63 +1273,54 @@ export default function Home() {
                     ผลลัพธ์จะมาปรากฏที่นี่เพื่อให้ครูตรวจและอนุมัติ
                   </p>
                   <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-                    <button type="button" className="btn btn-primary btn-sm" onClick={() => setView("create")}>
+                    <Button size="sm" onClick={() => setView("create")}>
                       สร้างงานแรก
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
                       onClick={seedDemoData}
-                      disabled={submitting}
+                      loading={submitting}
                       title="สร้างงานตัวอย่างสมมติ (ไม่มีข้อมูลนักเรียนจริง — PDPA)"
                     >
                       {submitting ? "กำลังโหลด..." : "โหลดข้อมูลตัวอย่าง"}
-                    </button>
+                    </Button>
                   </div>
                 </div>
-              ) : filtered.length === 0 ? (
+              ) : sorted.length === 0 ? (
                 <div className="empty">
                   <div className="empty-icon">🔍</div>
                   <div className="empty-title">ไม่พบรายการที่ตรงเงื่อนไข</div>
                   <p className="empty-text">ลองเปลี่ยนตัวกรองหรือล้างคำค้นหา</p>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setStatusFilter("all");
-                      setAgentFilter("all");
-                      setSearch("");
-                    }}
-                  >
+                  <Button size="sm" variant="secondary" onClick={resetFilters}>
                     ล้างตัวกรอง
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <div className="draft-list">
-                  {filtered.map((d) => (
+                  {sorted.map((d) => (
                     <article className="panel draft" key={d.id}>
                       <div className="draft-head">
                         <div className="draft-meta">
+                          <Checkbox
+                            checked={selection.selected.has(d.id)}
+                            disabled={d.status !== "pending"}
+                            onChange={() => selection.toggle(d.id)}
+                            label={`เลือก ${AGENT_LABEL[d.agent]} ${fmtTime(d.createdAt)}`}
+                          />
                           <span className="agent-tag">{AGENT_LABEL[d.agent]}</span>
                           <span className="draft-time">{fmtTime(d.createdAt)}</span>
                         </div>
-                        <span
-                          className={`badge ${
-                            d.status === "pending"
-                              ? "badge-pending"
-                              : d.status === "approved"
-                              ? "badge-approved"
-                              : "badge-rejected"
-                          }`}
-                        >
-                          {d.status === "pending"
-                            ? "รออนุมัติ"
-                            : d.status === "approved"
-                            ? "อนุมัติแล้ว"
-                            : "ปฏิเสธ"}
-                        </span>
+                        {draftBadge(d)}
                       </div>
-                      <div className="draft-out">{d.output}</div>
+                      <div
+                        className="draft-out"
+                        style={isMobile && d.status === "pending" ? { cursor: "pointer" } : undefined}
+                        onClick={isMobile ? () => setDrawerDraft(d) : undefined}
+                        title={isMobile ? "แตะเพื่อรีวิวในแผง" : undefined}
+                      >
+                        {d.output}
+                      </div>
                       {d.warnings.length > 0 && (
                         <ul className="warnings">
                           {d.warnings.map((w, i) => (
@@ -1058,43 +1328,7 @@ export default function Home() {
                           ))}
                         </ul>
                       )}
-                      <div className="draft-actions">
-                        {d.status === "pending" && (
-                          <>
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={() => setDraftStatus(d.id, "approved")}
-                            >
-                              อนุมัติ
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-danger btn-sm"
-                              onClick={() => setDraftStatus(d.id, "rejected")}
-                            >
-                              ปฏิเสธ
-                            </button>
-                          </>
-                        )}
-                        <span className="spacer" />
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => handleCopy(d)}
-                          title="คัดลอกผลลัพธ์"
-                        >
-                          <Icon d={ICON_COPY} size={14} /> คัดลอก
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => downloadDraft(d)}
-                          title="ดาวน์โหลดเป็นไฟล์ .txt"
-                        >
-                          <Icon d={ICON_DOWNLOAD} size={14} /> ดาวน์โหลด
-                        </button>
-                      </div>
+                      <div className="draft-actions">{draftActions(d)}</div>
                     </article>
                   ))}
                 </div>
@@ -1110,14 +1344,100 @@ export default function Home() {
         </footer>
       </div>
 
-      <div className="toasts" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.type}`}>
-            <span className="toast-icon">{t.type === "success" ? "✓" : t.type === "error" ? "✕" : "ℹ"}</span>
-            <span>{t.text}</span>
-          </div>
-        ))}
-      </div>
+      {/* mobile review drawer */}
+      <Drawer open={drawerDraft !== null} onClose={() => setDrawerDraft(null)}>
+        {drawerDraft && (
+          <>
+            <div className="draft-meta" style={{ marginBottom: 10 }}>
+              <span className="agent-tag">{AGENT_LABEL[drawerDraft.agent]}</span>
+              <span className="draft-time">{fmtTime(drawerDraft.createdAt)}</span>
+              {draftBadge(drawerDraft)}
+            </div>
+            <div className="draft-out">{drawerDraft.output}</div>
+            {drawerDraft.warnings.length > 0 && (
+              <ul className="warnings">
+                {drawerDraft.warnings.map((w, i) => (
+                  <li key={i}>⚠ {w}</li>
+                ))}
+              </ul>
+            )}
+            <div className="draft-actions" style={{ marginTop: 14 }}>
+              {draftActions(drawerDraft)}
+              <Button size="sm" variant="ghost" onClick={() => setDrawerDraft(null)}>
+                ปิด
+              </Button>
+            </div>
+          </>
+        )}
+      </Drawer>
+
+      {/* command palette */}
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
+
+      {/* confirm dialogs */}
+      <ConfirmDialog
+        open={confirm?.kind === "reject"}
+        title="ปฏิเสธร่างนี้?"
+        danger
+        confirmLabel="ปฏิเสธ"
+        body={
+          confirm?.warnings && confirm.warnings.length > 0 ? (
+            <>
+              <p style={{ marginBottom: 6 }}>ร่างนี้มีคำเตือนจากระบบ — ต้องการปฏิเสธใช่ไหม?</p>
+              <ul className="warnings" style={{ margin: 0 }}>
+                {confirm.warnings.map((w, i) => (
+                  <li key={i}>⚠ {w}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p>ร่างนี้จะถูกทำเครื่องหมายเป็นปฏิเสธ</p>
+          )
+        }
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => {
+          if (confirm?.id) setDraftStatus(confirm.id, "rejected");
+          setConfirm(null);
+        }}
+      />
+      <ConfirmDialog
+        open={confirm?.kind === "reject-batch"}
+        title={`ปฏิเสธ ${confirm?.count ?? 0} รายการ?`}
+        danger
+        confirmLabel="ปฏิเสธทั้งหมด"
+        body={
+          confirm?.warnings && confirm.warnings.length > 0 ? (
+            <>
+              <p style={{ marginBottom: 6 }}>มีรายการที่มีคำเตือนจากระบบ (ตัวอย่าง):</p>
+              <ul className="warnings" style={{ margin: 0 }}>
+                {confirm.warnings.map((w, i) => (
+                  <li key={i}>⚠ {w}</li>
+                ))}
+              </ul>
+            </>
+          ) : undefined
+        }
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => {
+          if (confirm?.kind === "reject-batch") {
+            const targets = filtered.filter((d) => d.status === "pending" && selection.selected.has(d.id));
+            doBatch("rejected", targets);
+          }
+          setConfirm(null);
+        }}
+      />
+      <ConfirmDialog
+        open={confirm?.kind === "delete-preset"}
+        title={`ลบ rubric "${confirm?.name ?? ""}"?`}
+        danger
+        confirmLabel="ลบ"
+        body={<p>การลบไม่สามารถเรียกคืนได้ — rubric นี้จะหายจากรายการสำเร็จรูป</p>}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => {
+          if (confirm?.name) doDeletePreset(confirm.name);
+          setConfirm(null);
+        }}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 import { Inter, Noto_Sans_Thai } from "next/font/google";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const notoThai = Noto_Sans_Thai({
@@ -95,7 +96,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body className={`${inter.variable} ${notoThai.variable}`}>
         <ServiceWorkerRegister />
-        <ErrorBoundary>{children}</ErrorBoundary>
+        <ErrorBoundary>
+          <ToastProvider>{children}</ToastProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );
