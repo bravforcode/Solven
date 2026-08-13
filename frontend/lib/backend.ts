@@ -5,8 +5,13 @@ import { AgentType, Draft } from "./types";
 // draft. The deterministic local mock is available ONLY when
 // NEXT_PUBLIC_SOLVEN_MODE=demo (build-time constant for NEXT_PUBLIC_* vars).
 
+// SOLVEN_BACKEND_URL is server-only and read at RUNTIME (compose sets
+// http://backend:8000 — service DNS). NEXT_PUBLIC_* is baked at build time
+// and kept as a fallback for local dev without compose.
 const API_URL =
-  process.env.NEXT_PUBLIC_SOLVEN_API_URL ?? "http://localhost:8000";
+  process.env.SOLVEN_BACKEND_URL ??
+  process.env.NEXT_PUBLIC_SOLVEN_API_URL ??
+  "http://localhost:8000";
 
 // Demo mode is the ONLY mode that may fabricate local mock drafts when the
 // backend is unreachable.

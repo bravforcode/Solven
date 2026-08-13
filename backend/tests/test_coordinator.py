@@ -35,6 +35,25 @@ def test_health(client):
     assert r.json()["status"] == "ok"
 
 
+def test_readyz_ok_when_db_usable(client):
+    r = client.get("/readyz")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ready"
+
+
+def test_readyz_fails_when_db_unusable(monkeypatch):
+    """Readiness must prove persistence: a broken store path -> 503, not green."""
+    app = create_app(Settings(api_token=TOKEN, db_path=":memory:"))
+    client = TestClient(app)
+
+    def boom():
+        raise RuntimeError("db unavailable")
+
+    monkeypatch.setattr(app.state.store, "_c", boom)
+    r = client.get("/readyz")
+    assert r.status_code == 503
+
+
 def test_fail_closed_raises_instead_of_mock_fallback(monkeypatch):
     """Production (fail_closed=True) must never degrade to mock output on provider error."""
     import httpx

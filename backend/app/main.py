@@ -116,6 +116,20 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def health():
         return {"status": "ok", "version": settings.version}
 
+    @app.get("/readyz", tags=["ops"])
+    def readyz():
+        """Readiness: prove the persisted DB actually works (AUD-H-12 / DEV-06).
+
+        /health is liveness-only; /readyz is what load balancers and Compose
+        should probe so a broken persistence path is never served as healthy.
+        """
+        try:
+            with store._c() as conn:
+                conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()
+        except Exception as exc:  # noqa: BLE001 - readiness must never 500
+            raise HTTPException(503, f"db not ready: {type(exc).__name__}") from exc
+        return {"status": "ready", "version": settings.version}
+
     @app.post("/api/coordinator", dependencies=[require_token], tags=["api"])
     def submit_task(body: TaskRequest, request: Request) -> DraftOut:
         if body.agent not in VALID_AGENTS:
