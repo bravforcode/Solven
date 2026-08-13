@@ -2,7 +2,8 @@ services:
   backend:
     build: ./backend
     environment:
-      - SOLVEN_API_TOKEN=${SOLVEN_API_TOKEN:-dev-secret-change-me}
+      - SOLVEN_API_TOKEN=${SOLVEN_API_TOKEN:?SOLVEN_API_TOKEN is required}
+      - SOLVEN_ENV=${SOLVEN_ENV:-dev}
       - SOLVEN_DB_PATH=/data/solven.db
       - SOLVEN_CORS_ORIGINS=http://localhost:3000
       - SOLVEN_LLM=mock
@@ -11,7 +12,8 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      # readiness, not liveness: proves the persisted DB path actually works
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -22,8 +24,11 @@ services:
       backend:
         condition: service_healthy
     environment:
+      # server-only runtime URL (service DNS inside compose network) — fixes
+      # the BFF-to-backend localhost bug (AUD-H-03 / DEV-01)
+      - SOLVEN_BACKEND_URL=http://backend:8000
       - NEXT_PUBLIC_SOLVEN_API_URL=http://localhost:8000
-      - SOLVEN_API_TOKEN=${SOLVEN_API_TOKEN:-dev-secret-change-me}
+      - SOLVEN_API_TOKEN=${SOLVEN_API_TOKEN:?SOLVEN_API_TOKEN is required}
     ports:
       - "3000:3000"
 

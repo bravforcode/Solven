@@ -15,6 +15,8 @@ from app.main import create_app
 
 
 def make_client(**overrides) -> tuple[TestClient, Settings]:
+    # default to an isolated in-memory DB so tests never share backend/data/solven.db
+    overrides.setdefault("db_path", ":memory:")
     settings = Settings(**overrides)
     return TestClient(create_app(settings)), settings
 
@@ -52,7 +54,7 @@ def test_api_accepts_valid_token():
     client, settings = make_client(api_token="test-token")
     r = client.post(
         "/api/coordinator",
-        json={"agent": "grading", "input": "คำตอบ"},
+        json={"agent": "grading", "input": "คำตอบ", "rubric": "เกณฑ์"},
         headers=auth("test-token"),
     )
     assert r.status_code == 200
@@ -70,6 +72,24 @@ def test_api_rejects_garbage_auth_scheme():
 
 
 # ---------------------------------------------------------------- rate limit
+def test_drafts_pagination_bounded():
+    """T2-02: list endpoints paginate with a bounded page size."""
+    client, _ = make_client(api_token="test-token")
+    for i in range(5):
+        r = client.post(
+            "/api/coordinator",
+            json={"agent": "lesson-plan", "input": f"หัวข้อ {i}"},
+            headers=auth("test-token"),
+        )
+        assert r.status_code == 200
+    r = client.get("/api/drafts?limit=2&offset=0", headers=auth("test-token"))
+    assert len(r.json()) == 2
+    r = client.get("/api/drafts?limit=1000", headers=auth("test-token"))
+    assert len(r.json()) == 5  # bounded at 500, we only have 5
+    r = client.get("/api/drafts?limit=0", headers=auth("test-token"))
+    assert len(r.json()) == 1  # clamped to min 1
+
+
 def test_rate_limit_429_after_limit():
     client, settings = make_client(rate_limit_per_min=3)
     for _ in range(3):

@@ -16,7 +16,9 @@ SCORE_RE = re.compile(r"\d+(?:\.\d+)?\s*/\s*\d+")
 REQUIRED_REMINDERS = ("ร่าง", "ตรวจทาน", "human-in-the-loop")
 
 
-def check(output: str, source_input: str) -> tuple[bool, list[str]]:
+def check(
+    output: str, source_input: str, agent: str | None = None
+) -> tuple[bool, list[str]]:
     warnings: list[str] = []
 
     for label, pat in (("เบอร์โทร", PHONE_RE), ("เลขบัตรประชาชน", ID_RE), ("อีเมล", EMAIL_RE)):
@@ -29,5 +31,10 @@ def check(output: str, source_input: str) -> tuple[bool, list[str]]:
 
     if not any(r in output for r in REQUIRED_REMINDERS):
         warnings.append("ผลลัพธ์ไม่มีข้อความเตือนว่าเป็นร่าง (human-in-the-loop)")
+
+    # T1-08: structured-output sanity — a grading result must contain a score
+    # in the expected format; anything else is treated as a policy failure.
+    if agent == "grading" and not SCORE_RE.search(output):
+        warnings.append("ผลลัพธ์การตรวจงานไม่มีคะแนนในรูปแบบที่คาด (เช่น 7.5/10) — ต้องตรวจทานเอง")
 
     return len(warnings) == 0, warnings

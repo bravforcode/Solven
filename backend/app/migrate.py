@@ -23,7 +23,12 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 
 def apply_migrations(conn: sqlite3.Connection, migrations_dir: Path | None = None) -> list[str]:
-    """Apply pending migrations. Returns the names of migrations applied."""
+    """Apply pending migrations. Returns the names of migrations applied.
+
+    Each migration + its tracker insert runs inside ONE explicit transaction
+    guarded by BEGIN IMMEDIATE (AUD-M-04 / DEV-06): concurrent startups cannot
+    half-apply a migration or double-apply it.
+    """
     md = migrations_dir or MIGRATIONS_DIR
     # base schema first so migrations are self-contained (they may reference tables)
     from app.db import _SCHEMA
@@ -36,9 +41,21 @@ def apply_migrations(conn: sqlite3.Connection, migrations_dir: Path | None = Non
         if path.name in applied:
             continue
         sql = path.read_text(encoding="utf-8")
-        conn.executescript(sql)
-        conn.execute("INSERT INTO schema_migrations (name) VALUES (?)", (path.name,))
-        conn.commit()
+        # strip SQL comment lines first: a ';' inside a comment must not split
+        # the migration into bogus statements
+        sql = "\n".join(
+            ln for ln in sql.splitlines() if not ln.strip().startswith("--")
+        )
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for stmt in sql.split(";"):
+                if stmt.strip():
+                    conn.execute(stmt)
+            conn.execute("INSERT INTO schema_migrations (name) VALUES (?)", (path.name,))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         done.append(path.name)
     return done
 

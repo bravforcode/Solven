@@ -32,3 +32,129 @@ def test_rate_limit_must_be_positive():
 def test_token_must_not_be_blank():
     with pytest.raises(Exception):
         Settings(api_token="   ")
+
+
+# --- production (env == "production") gates ---
+
+
+def test_prod_rejects_default_token():
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="dev-secret-change-me")
+
+
+def test_prod_rejects_short_token():
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="short")
+
+
+def test_prod_rejects_known_default_tokens():
+    for bad in ("test-token", "changeme"):
+        with pytest.raises(Exception):
+            Settings(env="production", api_token=bad)
+
+
+def test_prod_accepts_strong_token(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    s = Settings(
+        env="production",
+        api_token="x" * 40,
+        cors_origins=["https://app.example.com"],
+        llm="auto",
+    )
+    assert s.api_token == "x" * 40
+
+
+def test_prod_accepts_exactly_32_char_token(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    s = Settings(
+        env="production",
+        api_token="a" * 32,
+        cors_origins=["https://app.example.com"],
+        llm="auto",
+    )
+    assert s.api_token == "a" * 32
+
+
+def test_prod_rejects_example_env_token():
+    # the token documented in .env.example is public knowledge → must be rejected
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="change-me-to-a-long-random-string")
+
+
+def test_prod_requires_provider_key_for_non_mock_llm(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, llm="anthropic")
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, llm="auto")
+
+
+def test_prod_accepts_llm_when_provider_key_present(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    s = Settings(
+        env="production",
+        api_token="x" * 40,
+        cors_origins=["https://app.example.com"],
+        llm="openai",
+    )
+    assert s.llm == "openai"
+
+
+def test_prod_rejects_localhost_cors():
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, cors_origins=["http://localhost:3000"])
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, cors_origins=["http://127.0.0.1:3000"])
+
+
+def test_prod_rejects_mock_llm():
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, llm="mock")
+
+
+def test_prod_rejects_mixed_cors_list_with_localhost(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    with pytest.raises(Exception):
+        Settings(
+            env="production",
+            api_token="x" * 40,
+            cors_origins=["https://app.example.com", "http://localhost:3000"],
+            llm="auto",
+        )
+
+
+def test_prod_rejects_llm_not_in_approved_list(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    with pytest.raises(Exception):
+        Settings(
+            env="production",
+            api_token="x" * 40,
+            cors_origins=["https://app.example.com"],
+            llm="mystery-provider",
+        )
+
+
+def test_prod_accepts_llm_in_approved_list(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    s = Settings(
+        env="production",
+        api_token="x" * 40,
+        cors_origins=["https://app.example.com"],
+        llm="anthropic",
+        approved_llm_providers=["anthropic"],
+    )
+    assert s.llm == "anthropic"
+
+
+def test_invalid_env_rejected():
+    with pytest.raises(Exception):
+        Settings(env="staging")
+
+
+def test_dev_keeps_default_behavior():
+    # dev mode: default token, localhost CORS and mock LLM all still allowed
+    s = Settings(env="dev")
+    assert s.api_token == "dev-secret-change-me"
+    assert s.cors_origins == ["http://localhost:3000"]
+    assert s.llm == "mock"

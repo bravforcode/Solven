@@ -11,6 +11,7 @@ export interface Draft {
   warnings: string[];
   createdAt: string;
   engine?: "backend" | "mock";
+  teacherId?: string;
 }
 
 export const AGENT_LABEL: Record<AgentType, string> = {

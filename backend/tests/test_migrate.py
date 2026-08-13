@@ -29,6 +29,31 @@ def test_migrations_idempotent(conn):
     assert count >= 1
 
 
+def test_migration_failure_is_atomic(tmp_path):
+    """A failing migration must not record itself in schema_migrations (T2-03)."""
+    import sqlite3
+
+    from app.migrate import apply_migrations
+
+    bad_dir = tmp_path / "bad_migrations"
+    bad_dir.mkdir()
+    (bad_dir / "001_ok.sql").write_text("CREATE TABLE IF NOT EXISTS t_ok (id INTEGER);", encoding="utf-8")
+    (bad_dir / "002_bad.sql").write_text("ALTER TABLE nope ADD COLUMN x TEXT;", encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    with pytest.raises(Exception):
+        apply_migrations(conn, migrations_dir=bad_dir)
+    # 001 committed; 002 rolled back and must not be recorded — and the same
+    # failure recurs on a retry (no half-applied state)
+    names = {r[0] for r in conn.execute("SELECT name FROM schema_migrations")}
+    assert "001_ok.sql" in names
+    assert "002_bad.sql" not in names
+    with pytest.raises(Exception):
+        apply_migrations(conn, migrations_dir=bad_dir)
+    names = {r[0] for r in conn.execute("SELECT name FROM schema_migrations")}
+    assert "002_bad.sql" not in names
+
+
 def test_indexes_created(conn):
     apply_migrations(conn)
     names = {

@@ -6,18 +6,26 @@
 
 - **ทุก `/api/*` ของ backend ต้องมี Bearer token** (`SOLVEN_API_TOKEN`) — `/health` เปิดสาธารณะเท่านั้น
 - **ข้อมูลนักเรียน (<20 ปี) ต้องได้รับความยินยอมจากผู้ปกครองตาม PDPA §20** (ไม่จัดเป็นข้อมูลอ่อนไหวตาม §26) — PDPA อนุญาต cross-border ได้ตาม §28/29 (SCCs/ความยินยอม) แต่ทีมเลือก self-host ในไทย (เป้า: AIS Cloud/EEC) เป็นตัวเลือก data sovereignty; ห้ามมีข้อมูลจริงใน environment ทดสอบ
-- LLM: `SOLVEN_LLM=mock|anthropic|openai` — สเกลจริงใช้ open-source Thai model self-host (ดู Appendix A.6)
+- LLM: `SOLVEN_LLM=mock|anthropic|openai` — สเกลจริงใช้ open-source Thai model self-host (ดู Appendix A.6); **production ห้ามใช้ `mock`** (preflight บังคับ)
 - DB: SQLite เหมาะกับ pilot; ก่อน scale ต้องย้าย PostgreSQL (ดู Appendix A.7)
+- **ทุก release ต้องผ่าน `python -m app.preflight` ก่อน deploy** (ตรวจ token/CORS/LLM/site URL — fail closed)
 
 ## 2. Deployment ตัวเลือก
 
-### 2a. Docker Compose (เร็วสุด — pilot/demo)
+### 2a. Docker Compose (เร็วสุด — demo/pilot ในเครื่อง)
+
+> ⚠️ Compose นี้เป็น **dev profile เท่านั้น** (CORS `localhost`, `SOLVEN_LLM=mock`) —
+> ตั้ง `SOLVEN_ENV=production` แล้ว `docker compose up` จะ fail ที่ Settings gate โดยตั้งใจ
+> **Production จริงใช้ §2b** (แยก service) หรือแก้ compose ให้ชี้ production เอง (ต้องมี TLS/domain จริง)
 
 ```bash
 cp backend/.env.example backend/.env   # แก้ SOLVEN_API_TOKEN ก่อน!
 export SOLVEN_API_TOKEN="$(openssl rand -hex 32)"
+export SOLVEN_ENV=dev                  # demo/pilot
 docker compose up --build -d
 # frontend: http://localhost:3000 · backend: http://localhost:8000
+# NOTE: compose REQUIRED `SOLVEN_API_TOKEN` (ไม่มีค่า fallback dev อีกต่อไป)
+# ตรวจ preflight ใน container: docker compose run --rm -e NEXT_PUBLIC_SITE_URL=https://... backend python -m app.preflight
 ```
 
 ### 2b. แยก service (production จริง)
@@ -28,7 +36,8 @@ cd backend
 python -m venv .venv && .venv\Scripts\activate   # Windows
 pip install -r requirements.txt
 python -m app.migrate                            # schema + migrations
-SOLVEN_API_TOKEN=<secret> SOLVEN_LLM=mock uvicorn app.main:app --host 0.0.0.0 --port 8000
+SOLVEN_ENV=production SOLVEN_API_TOKEN=<secret> SOLVEN_LLM=auto \
+  uvicorn app.main:app --host 0.0.0.0 --port 8000
 # หลาย worker/process ต้องมี reverse proxy + Redis rate limiter (ดูข้อ 4)
 
 # frontend (build แล้ว serve ด้วย Next standalone หรือ Vercel)
@@ -43,18 +52,39 @@ npm run start
 
 | ตัวแปร | บังคับ | ค่าเริ่มต้น | คำอธิบาย |
 |---|---|---|---|
-| `SOLVEN_API_TOKEN` | ✅ prod | dev-secret-change-me | Bearer token ของ backend — **เปลี่ยนเสมอ** |
+| `SOLVEN_ENV` | ✅ prod | dev | dev \| production — production มี fail-closed gates |
+| `SOLVEN_API_TOKEN` | ✅ prod | dev-secret-change-me | Bearer token ของ backend — **เปลี่ยนเสมอ** (prod: ≥32 chars, ห้าม default) |
 | `SOLVEN_RATE_LIMIT_PER_MIN` | – | 60 | requests/IP/min (ในหน่วยความจำ — เปลี่ยนเป็น Redis เมื่อหลาย instance) |
-| `SOLVEN_CORS_ORIGINS` | – | http://localhost:3000 | origin ที่ browser เรียกได้ (comma-separated) |
+| `SOLVEN_CORS_ORIGINS` | – | http://localhost:3000 | origin ที่ browser เรียกได้ (comma-separated; prod ห้าม localhost) |
 | `SOLVEN_DB_PATH` | – | backend/data/solven.db | path ฐานข้อมูล |
-| `SOLVEN_LLM` | – | auto | mock / anthropic / openai |
+| `SOLVEN_LLM` | – | mock | mock / auto / anthropic / openai (prod ห้าม mock) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | ตาม LLM | – | key ของ provider |
 | `NEXT_PUBLIC_SOLVEN_API_URL` (frontend) | ✅ | localhost:8000 | URL backend จากมุมมอง Next.js server |
 | `SOLVEN_API_TOKEN` (frontend) | ✅ | – | token ส่งต่อจาก Next.js server → backend (ไม่รั่วถึง browser) |
 
-## 4. Checklist ก่อน production
+## 4. Identity edge contract (production จำเป็น)
 
-- [ ] `SOLVEN_API_TOKEN` เป็น random ≥ 32 chars และเก็บใน secret manager
+Production ใช้ **BFF deny-by-default + edge-injected principal** (AUD-C-03 / ARCH-03):
+
+- หน้า app ต้องอยู่หลัง identity-aware edge (OIDC/session proxy) ที่ยืนยันตัวตนครู แล้ว
+  **set header** ต่อไปนี้ทุก request (server-to-server ไปยัง Next BFF → FastAPI):
+  - `x-solven-principal` = teacher id (บังคับใน production — ไม่มี → 401)
+  - `x-solven-tenant` = school/tenant id (optional)
+- **edge MUST strip และ re-assert** header เหล่านี้ — ห้ามให้ client ตั้งเองได้
+  (ไม่งั้น impersonation ได้เต็มรูปแบบ)
+- BFF/backend ไม่ trust ค่า client ที่ส่งมา; forward เฉพาะค่า edge ที่ verify แล้ว
+- **offline queue (SW flush) ใช้ได้กับ edge แบบ cookie/session เท่านั้น** — SW fetch
+  same-origin จะส่ง cookie ไปด้วย แล้ว edge inject `x-solven-principal` ได้;
+  ถ้า edge เป็น token-only (ไม่มี cookie) → offline queue จะ flush ไม่ได้ (401 ทุกรอบ)
+  ให้ปิด offline queue ในการตั้งค่าแบบนั้น
+- demo/dev (NEXT_PUBLIC_SOLVEN_MODE=demo, SOLVEN_ENV=dev) ใช้ identity คงที่ `demo-teacher`
+  — ไม่ต้องมี edge
+- Release gate: ทดสอบว่าส่ง request ไม่มี `x-solven-principal` ใน production → 401 ทุกรอบ
+
+## 5. Checklist ก่อน production
+
+- [ ] `SOLVEN_ENV=production` และ `SOLVEN_API_TOKEN` random ≥ 32 chars เก็บใน secret manager
+- [ ] รัน `python -m app.preflight` (backend) — ต้องออก `PREFLIGHT OK` (exit 0)
 - [ ] HTTPS ทุกจุด (TLS terminate ที่ proxy) + HTTP→HTTPS redirect
 - [ ] `SOLVEN_CORS_ORIGINS` = domain จริงเท่านั้น
 - [ ] Rate limit ระดับ edge (WAF/nginx) นอกเหนือจาก in-app limiter
@@ -65,11 +95,11 @@ npm run start
 - [ ] Monitoring: `/health` ใช้กับ load balancer; structured log มี `request_id` ทุก request
 - [ ] รัน `python -m app.migrate` ในขั้นตอน release (ไมเกรชัน idempotent)
 
-## 5. Rollback
+## 6. Rollback
 
-- ไมเกรชันเป็น additive (index เท่านั้นใน v1) — rollback = deploy image เก่า
+- ไมเกรชัน additive (index + `drafts.teacher_id`) — rollback = deploy image เก่า (ข้อมูลไม่หาย; ระวัง code เก่าอ่านตารางใหม่ได้ปกติ)
 - การเปลี่ยน schema ที่ destructive ต้องมี migration ใหม่แยกไฟล์ และห้ามแก้ไฟล์เดิมหลัง release
 
-## 6. CI/CD
+## 7. CI/CD
 
 `.github/workflows/ci.yml` รันทุก push/PR: backend pytest (32 tests) + frontend lint/typecheck/build

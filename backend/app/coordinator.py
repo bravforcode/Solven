@@ -16,6 +16,31 @@ from app.db import Store
 from app.llm import get_llm, sha256
 
 
+class FailClosedError(RuntimeError):
+    """Raised when an LLM provider fails in a fail-closed (production) run.
+
+    The caller must translate this into a non-2xx response — the request is
+    never allowed to degrade into deterministic mock grading.
+    """
+
+
+class TaskNotOwnedError(RuntimeError):
+    """Raised when a client_task_id already belongs to another teacher.
+
+    Replay lookups are scoped by principal: reusing someone else's task id must
+    never return their draft (cross-tenant IDOR, AUD-H-01 / C1).
+    """
+
+
+class InFlightError(RuntimeError):
+    """Raised when a same-key request arrives while the task is still running.
+
+    Duplicate in-flight delivery must not re-run the agent or fabricate a
+    second draft (T1-10, AUD-H-10). The caller returns 409 so the client can
+    retry after the in-flight task completes.
+    """
+
+
 class CoordState(TypedDict):
     task_id: str
     agent: str
@@ -25,6 +50,8 @@ class CoordState(TypedDict):
     warnings: list[str]
     passed: bool
     retries: int
+    teacher_id: str | None
+    engine: str
 
 
 def _now():
@@ -33,7 +60,7 @@ def _now():
     return now_iso()
 
 
-def make_coordinator(store: Store):
+def make_coordinator(store: Store, fail_closed: bool = False):
     llm = get_llm()
 
     def route(state: CoordState) -> CoordState:
@@ -45,9 +72,24 @@ def make_coordinator(store: Store):
         start = time.perf_counter()
         model = llm.model
         run_status = "completed"
+        # PDPA boundary (T0-05): raw student text must NOT reach external
+        # providers. Mock stays untouched (local, deterministic).
+        if model.startswith("mock"):
+            provider_input = state["input"]
+            provider_rubric = state.get("rubric")
+        else:
+            from app.redact import redact_pii
+
+            provider_input = redact_pii(state["input"])
+            provider_rubric = redact_pii(state.get("rubric") or "") or None
         try:
-            output = run_sub_agent(llm, state["agent"], state["input"], state.get("rubric"))
+            output = run_sub_agent(llm, state["agent"], provider_input, provider_rubric)
         except httpx.HTTPStatusError:
+            if fail_closed:
+                raise FailClosedError(
+                    "LLM provider rejected the request (HTTP error); refusing to "
+                    "fall back to mock output in production"
+                ) from None
             # API key invalid/unavailable → honest fallback to deterministic mock
             # (recorded in agent_runs.status so the audit trail shows what ran)
             from app.llm import MockLLM
@@ -72,10 +114,14 @@ def make_coordinator(store: Store):
                 "created_at": _now(),
             }
         )
-        return {**state, "output": output}
+        return {
+            **state,
+            "output": output,
+            "engine": "mock" if model.startswith("mock") else "llm",
+        }
 
     def guardrail_node(state: CoordState) -> CoordState:
-        passed, warnings = guardrail.check(state["output"], state["input"])
+        passed, warnings = guardrail.check(state["output"], state["input"], state["agent"])
         # update audit row guardrail flag (latest run for this task)
         with store._c() as conn:
             conn.execute(
@@ -93,6 +139,15 @@ def make_coordinator(store: Store):
         return {**state, "retries": state["retries"] + 1}
 
     def finalize(state: CoordState) -> dict:
+        # T1-07 (SEC-H-04): policy failures from a REAL provider are
+        # QUARANTINED, not returned as ordinary pending drafts — the teacher
+        # must consciously review them. The deterministic demo mock is exempt
+        # (explicitly demo-only; production preflight blocks mock entirely).
+        status = (
+            "quarantined"
+            if (not state["passed"] and state.get("engine") != "mock")
+            else "pending"
+        )
         store.add_draft(
             draft_id=str(uuid.uuid4()),
             task_id=state["task_id"],
@@ -100,6 +155,8 @@ def make_coordinator(store: Store):
             input_text=state["input"],
             output=state["output"],
             warnings=state["warnings"],
+            teacher_id=state.get("teacher_id"),
+            status=status,
         )
         store.set_task_state(state["task_id"], "draft_ready")
         return {}
@@ -129,17 +186,26 @@ def run_task(
     user_input: str,
     rubric: str | None = None,
     client_task_id: str | None = None,
+    fail_closed: bool = False,
+    teacher_id: str | None = None,
 ) -> dict:
     task_id = client_task_id or str(uuid.uuid4())
-    inserted = store.create_task(task_id, agent, user_input)
+    inserted = store.create_task(task_id, agent, user_input, teacher_id=teacher_id)
     if not inserted:
         # replayed request (e.g. offline-queue retry after reconnect) — return the
-        # draft already produced instead of re-running the agent.
-        existing = [d for d in store.list_drafts() if d["task_id"] == task_id]
+        # draft already produced instead of re-running the agent. The lookup is
+        # scoped to THIS teacher: a foreign task id must never leak another
+        # teacher's draft (cross-tenant IDOR).
+        existing = [d for d in store.list_drafts(teacher_id=teacher_id) if d["task_id"] == task_id]
         if existing:
             return existing[0]
-        # task row exists but no draft yet (rare race, e.g. duplicate in-flight
-        # delivery) — fall through and run normally rather than error out.
+        task = store.get_task(task_id)
+        if task and task.get("teacher_id") != teacher_id:
+            raise TaskNotOwnedError(
+                "client_task_id already used by another teacher (replay refused)"
+            )
+        # same teacher, task exists, no draft yet → duplicate in-flight delivery
+        raise InFlightError("task already in progress (duplicate delivery — retry shortly)")
     state: CoordState = {
         "task_id": task_id,
         "agent": agent,
@@ -149,7 +215,10 @@ def run_task(
         "warnings": [],
         "passed": True,
         "retries": 0,
+        "teacher_id": teacher_id,
+        # run_agent always overwrites with the actual engine before finalize
+        "engine": "mock",
     }
-    make_coordinator(store).invoke(state)
+    make_coordinator(store, fail_closed=fail_closed).invoke(state)
     drafts = [d for d in store.list_drafts() if d["task_id"] == task_id]
     return drafts[0]

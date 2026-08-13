@@ -1,28 +1,51 @@
 import { AgentType, Draft } from "./types";
 
-// Try the real Solven backend first (Appendix A architecture); fall back to
-// the deterministic local mock so the demo always works (e.g. demo without
-// the Python server running). The engine actually used is returned honestly
-// and displayed in the UI.
+// Try the real Solven backend first (Appendix A architecture). Production
+// (default) fails closed: backend errors surface as errors and never create a
+// draft. The deterministic local mock is available ONLY when
+// NEXT_PUBLIC_SOLVEN_MODE=demo (build-time constant for NEXT_PUBLIC_* vars).
 
+// SOLVEN_BACKEND_URL is server-only and read at RUNTIME (compose sets
+// http://backend:8000 — service DNS). NEXT_PUBLIC_* is baked at build time
+// and kept as a fallback for local dev without compose.
 const API_URL =
-  process.env.NEXT_PUBLIC_SOLVEN_API_URL ?? "http://localhost:8000";
+  process.env.SOLVEN_BACKEND_URL ??
+  process.env.NEXT_PUBLIC_SOLVEN_API_URL ??
+  "http://localhost:8000";
+
+// Demo mode is the ONLY mode that may fabricate local mock drafts when the
+// backend is unreachable.
+const DEMO_MODE = process.env.NEXT_PUBLIC_SOLVEN_MODE === "demo";
 
 // Bearer token for the backend — server-side only (Next.js API routes).
 // Never shipped to the browser.
 const API_TOKEN = process.env.SOLVEN_API_TOKEN ?? "";
 
-export interface RunResult {
-  draft: Draft;
-  engine: "backend" | "mock";
-  error?: string;
+export type RunResult =
+  | { ok: true; engine: "backend" | "mock"; draft: Draft; error?: string }
+  | { ok: false; error: string };
+
+export interface BackendPrincipal {
+  teacherId: string;
+  tenant?: string;
+}
+
+/** Forward the verified BFF principal to the backend (server-to-server). */
+function principalHeaders(principal?: BackendPrincipal): Record<string, string> {
+  if (!principal) return {};
+  const headers: Record<string, string> = {
+    "x-solven-principal": principal.teacherId,
+  };
+  if (principal.tenant) headers["x-solven-tenant"] = principal.tenant;
+  return headers;
 }
 
 export async function runAgent(
   agent: AgentType,
   input: string,
   rubric?: string,
-  clientTaskId?: string
+  clientTaskId?: string,
+  principal?: BackendPrincipal
 ): Promise<RunResult> {
   try {
     const res = await fetch(`${API_URL}/api/coordinator`, {
@@ -30,6 +53,7 @@ export async function runAgent(
       headers: {
         "Content-Type": "application/json",
         ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+        ...principalHeaders(principal),
       },
       signal: AbortSignal.timeout(30000),
       body: JSON.stringify({
@@ -42,6 +66,7 @@ export async function runAgent(
     if (!res.ok) throw new Error(`backend ${res.status}`);
     const d = await res.json();
     return {
+      ok: true,
       engine: "backend",
       draft: {
         id: d.id,
@@ -54,10 +79,16 @@ export async function runAgent(
       },
     };
   } catch (err) {
-    // local fallback: deterministic mock, same shape
+    const message = err instanceof Error ? err.message : String(err);
+    if (!DEMO_MODE) {
+      // fail closed: surface backend failure, never fabricate a draft
+      return { ok: false, error: message };
+    }
+    // local fallback: deterministic mock, same shape (demo mode only)
     return {
+      ok: true,
       engine: "mock",
-      error: err instanceof Error ? err.message : String(err),
+      error: message,
       draft: {
         id: crypto.randomUUID(),
         agent,
@@ -83,7 +114,8 @@ export function mockGuardrailWarnings(output: string): string[] {
 
 export async function patchDraft(
   id: string,
-  status: "approved" | "rejected"
+  status: "approved" | "rejected",
+  principal?: BackendPrincipal
 ): Promise<boolean> {
   try {
     const res = await fetch(`${API_URL}/api/drafts/${id}`, {
@@ -91,6 +123,7 @@ export async function patchDraft(
       headers: {
         "Content-Type": "application/json",
         ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+        ...principalHeaders(principal),
       },
       signal: AbortSignal.timeout(10000),
       body: JSON.stringify({ status }),
@@ -99,6 +132,41 @@ export async function patchDraft(
   } catch {
     return false;
   }
+}
+
+/** T1-03: read drafts from the authoritative backend (scoped by principal). */
+export async function listBackendDrafts(
+  principal: BackendPrincipal
+): Promise<Draft[]> {
+  const res = await fetch(`${API_URL}/api/drafts`, {
+    method: "GET",
+    headers: {
+      ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+      ...principalHeaders(principal),
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`backend ${res.status}`);
+  const rows = (await res.json()) as Array<{
+    id: string;
+    agent: AgentType;
+    input: string;
+    output: string;
+    status: Draft["status"];
+    warnings?: string[];
+    createdAt: string;
+  }>;
+  return rows.map((d) => ({
+    id: d.id,
+    agent: d.agent,
+    input: d.input,
+    output: d.output,
+    status: d.status,
+    warnings: d.warnings ?? [],
+    createdAt: d.createdAt,
+    engine: "backend" as const,
+    teacherId: principal.teacherId,
+  }));
 }
 
 export function localMock(agent: AgentType, input: string): string {

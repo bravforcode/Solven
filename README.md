@@ -91,7 +91,8 @@ Tailwind v4 + shadcn-style tokens บน Stripe grammar เดิม (ค่า 
 ### Launch checklist (ก่อนเปิดใช้งานจริง)
 
 1. `NEXT_PUBLIC_SITE_URL` = domain จริง (ไฟล์ `frontend/.env.local`) — ตอนนี้เป็น placeholder
-2. `SOLVEN_API_TOKEN` = random ≥32 chars ทั้ง backend และ frontend (secret manager)
-3. Deploy ตาม `docs/DEPLOYMENT.md` — TLS, CORS origins จริง, `python -m app.migrate`
-4. ตรวจสอบตัวเลข/ข้อมูลใน `docs/jump-2026-application.md` (PISA/TDRI อ้างอิง) ก่อนส่งประกวด
-5. ทดสอบ E2E กับ pilot กลุ่มเล็ก (10-20 ครู) ก่อน scale
+2. `SOLVEN_ENV=production` + `SOLVEN_API_TOKEN` = random ≥32 chars (secret manager) ทั้ง backend และ frontend
+3. รัน `python -m app.preflight` (backend) — ต้อง `PREFLIGHT OK` (exit 0) ก่อน deploy
+4. Deploy ตาม `docs/DEPLOYMENT.md` — TLS, CORS origins จริง, `python -m app.migrate`
+5. ตรวจสอบตัวเลข/ข้อมูลใน `docs/jump-2026-application.md` (PISA/TDRI อ้างอิง) ก่อนส่งประกวด
+6. ทดสอบ E2E กับ pilot กลุ่มเล็ก (10-20 ครู) ก่อน scale

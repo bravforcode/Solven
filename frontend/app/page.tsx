@@ -436,6 +436,14 @@ export default function Home() {
     const payloads = buildPayloads();
     if (payloads.length === 0) return;
 
+    // AUD-H-13: grading requires a rubric — stop before any request so the
+    // teacher sees a clear reason instead of an opaque 400 from the server.
+    if (agent === "grading" && (!rubric || !rubric.trim())) {
+      setFormError("ตรวจงานต้องระบุเกณฑ์การให้คะแนน (rubric) ก่อนส่ง");
+      pushToast("error", "ต้องระบุเกณฑ์การให้คะแนนก่อนส่งงานตรวจ");
+      return;
+    }
+
     setSubmitting(true);
     setProgress({ done: 0, total: payloads.length });
     let lastEngine = "";
@@ -451,7 +459,17 @@ export default function Home() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ...payloads[i], client_task_id: clientTaskId }),
           });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          if (!res.ok) {
+            // surface the server's reason (e.g. backend unavailable, rubric error)
+            let detail = `HTTP ${res.status}`;
+            try {
+              const body = (await res.json()) as { error?: string };
+              if (body.error) detail = body.error;
+            } catch {
+              /* non-JSON error body — keep status code */
+            }
+            throw new Error(detail);
+          }
           const data = (await res.json()) as { engine?: string; engineError?: string | null };
           lastEngine = data.engine ?? lastEngine;
           if (data.engine === "mock") {
@@ -512,7 +530,7 @@ export default function Home() {
     setBusyId(id);
     try {
       const updated = await patchDraftStatus(id, status);
-      if (!updated) throw new Error("HTTP");
+      if (!updated) throw new Error("backend ไม่พร้อมใช้งาน (อัปเดตสถานะไม่สำเร็จ)");
       setDrafts((ds) => ds.map((d) => (d.id === id ? updated : d)));
       setFlashId(id);
       const label = status === "approved" ? "อนุมัติ" : "ปฏิเสธ";
