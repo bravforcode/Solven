@@ -66,6 +66,19 @@ npm run dev          # http://localhost:3000
 > API ทุกตัวของ backend ต้องใช้ Bearer token (`SOLVEN_API_TOKEN`) — ดู `backend/.env.example`
 > และ `docs/DEPLOYMENT.md` สำหรับ production runbook · `docker compose up --build` สำหรับ pilot
 
+## UI features (Pro UI redesign — 14 Aug 2026)
+
+Tailwind v4 + shadcn-style tokens บน Stripe grammar เดิม (ค่า token ไม่เปลี่ยน) + ฟีเจอร์ความอำนวยสะดวก:
+
+- **Batch approve/reject** — เลือกหลายร่างในคิว (checkbox + select-all เฉพาะรายการที่แสดง) → อนุมัติ/ปฏิเสธทีเดียว; กด "เลิกทำ" ใน toast 5 วินาทีเพื่อย้อนกลับเป็นรออนุมัติ
+- **Command palette** — กด `⌘K` / `Ctrl+K` (หรือปุ่ม ⌘K ในแถบบน) ค้นหาแล้วไปสร้างงาน/คิวตรวจ/กรองสถานะ/ล้างตัวกรอง/โหลดตัวอย่าง
+- **Confirm dialogs** — ยืนยันก่อนปฏิเสธร่างที่มีคำเตือน, ปฏิเสธเป็นชุด, และลบ rubric preset
+- **Bottom drawer (มือถือ)** — แตะเนื้อหาร่างบนจอเล็ก → แผงเลื่อนขึ้นรีวิว + อนุมัติ/คัดลอก/ดาวน์โหลด; ปัดลงเพื่อปิด
+- **Sort + result count** — เรียงใหม่สุด/เก่าสุด/งาน A-Z; "แสดง X จาก Y รายการ" อัปเดตตามตัวกรอง
+- **Keyboard shortcuts (desktop)** — `1` สร้างงาน · `2` คิวตรวจ · `n` สร้างงาน · `/` ค้นหา · `c` โฟกัสคำตอบ · `Esc` ปิด overlays (ข้ามเมื่อพิมพ์ในฟอร์ม)
+- **Stateful buttons** — spinner + `aria-busy` ขณะ submit/อนุมัติ; flash เขียว 800ms เมื่อสำเร็จ
+- A11y: focus trap + scroll lock บน dialog/drawer/palette, `aria-activedescendant` ใน palette, `role="status"` bulk bar, `prefers-reduced-motion` ทุก animation
+
 ## Production readiness
 
 - ✅ Auth (Bearer), rate limiting, security headers, request IDs, structured logging

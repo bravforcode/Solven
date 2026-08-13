@@ -47,3 +47,18 @@
 ## Motion & components (ReactBits — state)
 
 ReactBits components remain vendored in `components/reactbits/` (MIT, `DavidHDev/react-bits`) but the Stripe world uses only **CountUp** (metric tiles — quiet, stateful). Particles/ShinyText/BorderGlow are retired from this world: Stripe's grammar has no decorative motion, and the brief pins the world.
+
+## Token layer & primitives (14 Aug 2026 — Tailwind v4)
+
+`globals.css` เริ่มด้วย `@import "tailwindcss"` + `@theme inline` map shadcn-style tokens ไปยัง `:root` Stripe vars เดิม (**ค่าทุกตัวไม่เปลี่ยน**): `--color-background/foreground/card/popover/primary/secondary/muted/accent/destructive/border/input/ring/success/warning`, `--radius` (12px) / `--radius-sm` (6px), `--font-sans` = Inter + Noto Sans Thai. CSS เดิมทั้งหมดอยู่ **unlayered** (cascade ชนะ Tailwind preflight → selector เดิม match JSX เดิมเป๊ะ).
+
+`components/ui/` — primitives ใหม่บน grammar เดิม:
+- `Button` (stateful: `loading` → spinner/`aria-busy`, `success` → flash เขียว 800ms ผ่าน `.btn-success`)
+- `Checkbox` (indeterminate, `.draft-checkbox` accent)
+- `ToastProvider` + `useToast()` (undo action ผ่าน `.undo-btn`, auto-dismiss 4.2s / 5s เมื่อมี action)
+- `ConfirmDialog` (`.drawer-mask` + `.panel`, focus trap + scroll lock)
+- `Drawer` (bottom sheet มือถือ, motion spring + drag-down-to-close)
+- `CommandPalette` (⌘K, `.cmd-*`, `aria-activedescendant`, focus trap)
+- `lib/commands.ts` (`buildCommands`/`filterCommands`) · `lib/hooks.ts` (`useSelection`, `useShortcuts`, `useMediaQuery`) · `lib/drafts.ts` (`patchDraftStatus` — รองรับ "pending" สำหรับ undo, `applyBatch`) · `lib/focus.ts` (focus trap + scroll lock)
+
+กฎเดิม (1-9) ยังคงมีผล; เพิ่ม: overlays ทุกตัวมี focus trap + scroll lock + Esc; batch selection ทำงานเฉพาะรายการ pending ที่แสดงอยู่; shortcuts ทำงานเฉพาะ desktop และข้ามเมื่อโฟกัสอยู่ในฟอร์ม.

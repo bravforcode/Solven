@@ -568,7 +568,7 @@ export default function Home() {
   }
 
   /* ----- convenience: demo data + export ----- */
-  async function seedDemoData() {
+  const seedDemoData = useCallback(async () => {
     if (submitting) return;
     setSubmitting(true);
     let created = 0;
@@ -594,7 +594,7 @@ export default function Home() {
     } finally {
       setSubmitting(false);
     }
-  }
+  }, [submitting, loadDrafts, pushToast]);
 
   function exportApproved() {
     const approved = drafts.filter((d) => d.status === "approved");
@@ -720,7 +720,7 @@ export default function Home() {
           seedDemoData();
         },
       }),
-    [resetFilters]
+    [resetFilters, seedDemoData]
   );
 
   /* ----- keyboard shortcuts (desktop only) ----- */
