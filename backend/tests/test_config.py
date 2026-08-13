@@ -124,6 +124,29 @@ def test_prod_rejects_mixed_cors_list_with_localhost(monkeypatch):
         )
 
 
+def test_prod_rejects_llm_not_in_approved_list(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    with pytest.raises(Exception):
+        Settings(
+            env="production",
+            api_token="x" * 40,
+            cors_origins=["https://app.example.com"],
+            llm="mystery-provider",
+        )
+
+
+def test_prod_accepts_llm_in_approved_list(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    s = Settings(
+        env="production",
+        api_token="x" * 40,
+        cors_origins=["https://app.example.com"],
+        llm="anthropic",
+        approved_llm_providers=["anthropic"],
+    )
+    assert s.llm == "anthropic"
+
+
 def test_invalid_env_rejected():
     with pytest.raises(Exception):
         Settings(env="staging")

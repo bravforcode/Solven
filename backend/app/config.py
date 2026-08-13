@@ -28,6 +28,13 @@ def _split_origins(v):
     return v
 
 
+def _split_list(v):
+    """Comma-separated env value -> list[str] (same shape as origins)."""
+    if isinstance(v, str):
+        return [o.strip() for o in v.split(",") if o.strip()]
+    return v
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SOLVEN_", env_file=".env", extra="ignore")
 
@@ -43,6 +50,11 @@ class Settings(BaseSettings):
     api_token: str = "dev-secret-change-me"
     # LLM mode: mock / auto / anthropic / openai (read by app/llm.py)
     llm: str = "mock"
+    # Approved LLM providers (comma-separated, env SOLVEN_APPROVED_LLM_PROVIDERS).
+    # Production rejects SOLVEN_LLM values not on this list (AUD-C-04 / T0-04).
+    approved_llm_providers: Annotated[
+        list[str], NoDecode, BeforeValidator(_split_list)
+    ] = ["mock", "anthropic", "openai", "auto"]
     # requests allowed per IP per minute
     rate_limit_per_min: int = 60
     # comma-separated list of allowed browser origins (env: SOLVEN_CORS_ORIGINS)
@@ -91,6 +103,10 @@ class Settings(BaseSettings):
             problems.append("production SOLVEN_CORS_ORIGINS must not contain localhost/127.0.0.1")
         if self.llm == "mock":
             problems.append("production SOLVEN_LLM must not be 'mock'")
+        if self.llm != "mock" and self.llm not in self.approved_llm_providers:
+            problems.append(
+                f"production SOLVEN_LLM={self.llm} is not in SOLVEN_APPROVED_LLM_PROVIDERS"
+            )
         if self.llm == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
             problems.append("production SOLVEN_LLM=anthropic requires ANTHROPIC_API_KEY")
         if self.llm == "openai" and not os.environ.get("OPENAI_API_KEY"):

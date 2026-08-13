@@ -62,8 +62,18 @@ def make_coordinator(store: Store, fail_closed: bool = False):
         start = time.perf_counter()
         model = llm.model
         run_status = "completed"
+        # PDPA boundary (T0-05): raw student text must NOT reach external
+        # providers. Mock stays untouched (local, deterministic).
+        if model.startswith("mock"):
+            provider_input = state["input"]
+            provider_rubric = state.get("rubric")
+        else:
+            from app.redact import redact_pii
+
+            provider_input = redact_pii(state["input"])
+            provider_rubric = redact_pii(state.get("rubric") or "") or None
         try:
-            output = run_sub_agent(llm, state["agent"], state["input"], state.get("rubric"))
+            output = run_sub_agent(llm, state["agent"], provider_input, provider_rubric)
         except httpx.HTTPStatusError:
             if fail_closed:
                 raise FailClosedError(
