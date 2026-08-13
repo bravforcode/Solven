@@ -5,6 +5,7 @@ Run:  uvicorn app.main:app   (module-level `app` = default settings)
 
 import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -27,15 +28,30 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 VALID_AGENTS = {"grading", "lesson-plan", "reporting"}
 
 
+def _resolve_db_path(db_path: str) -> Optional[Path]:
+    """Normalize the configured DB path to one value used everywhere.
+
+    Preserves the ':memory:' magic string for tests; returns None when unset
+    (Store then falls back to its default file path).
+    """
+    if not db_path:
+        return None
+    if db_path == ":memory:":
+        return db_path  # type: ignore[return-value]  # magic string handled by Store
+    return Path(db_path)
+
+
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or Settings()
-    store = Store(settings.db_path or None)
+    db_path = _resolve_db_path(settings.db_path)
+    store = Store(db_path)
 
     # apply schema migrations on startup (file-backed DBs only)
-    if settings.db_path and settings.db_path != ":memory:":
+    if db_path and db_path != ":memory:":
         import sqlite3
 
-        with sqlite3.connect(settings.db_path, check_same_thread=False) as conn:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(db_path, check_same_thread=False) as conn:
             apply_migrations(conn)
 
     app = FastAPI(title=settings.app_name, version=settings.version)
