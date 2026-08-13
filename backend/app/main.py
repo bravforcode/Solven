@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.coordinator import run_task
-from app.db import Store
+from app.db import DB_PATH, Store
 from app.middleware import (
     RateLimitMiddleware,
     RequestContextMiddleware,
@@ -31,23 +31,24 @@ VALID_AGENTS = {"grading", "lesson-plan", "reporting"}
 def _resolve_db_path(db_path: str) -> Optional[Path]:
     """Normalize the configured DB path to one value used everywhere.
 
-    Preserves the ':memory:' magic string for tests; returns None when unset
-    (Store then falls back to its default file path).
+    Preserves the ':memory:' magic string for tests; returns None when unset or
+    blank (Store then falls back to its default file path). Whitespace-only
+    values are treated as unset so a stray env value cannot create a file.
     """
-    if not db_path:
+    if not db_path or not db_path.strip():
         return None
-    if db_path == ":memory:":
-        return db_path  # type: ignore[return-value]  # magic string handled by Store
-    return Path(db_path)
+    if db_path.strip() == ":memory:":
+        return db_path.strip()  # type: ignore[return-value]  # magic string handled by Store
+    return Path(db_path.strip())
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or Settings()
-    db_path = _resolve_db_path(settings.db_path)
+    db_path = _resolve_db_path(settings.db_path) or DB_PATH
     store = Store(db_path)
 
     # apply schema migrations on startup (file-backed DBs only)
-    if db_path and db_path != ":memory:":
+    if db_path != ":memory:":
         import sqlite3
 
         db_path.parent.mkdir(parents=True, exist_ok=True)

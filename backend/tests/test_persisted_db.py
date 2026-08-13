@@ -5,24 +5,39 @@ the same file. `:memory:` mode is covered by the existing suite and must be
 untouched.
 """
 
-import os
 import sqlite3
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.main import create_app
+from app.main import _resolve_db_path, create_app
 
 TOKEN = "test-token"
 
 
-def _make_app(db_path: str):
-    os.environ["SOLVEN_LLM"] = "mock"
+def _make_app(db_path: str, monkeypatch):
+    monkeypatch.setenv("SOLVEN_LLM", "mock")
     return create_app(Settings(api_token=TOKEN, db_path=db_path))
 
 
 def _auth() -> dict:
     return {"Authorization": f"Bearer {TOKEN}"}
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("", None),
+        ("   ", None),
+        (":memory:", ":memory:"),
+        ("  :memory:  ", ":memory:"),
+        ("/data/solven.db", Path("/data/solven.db")),
+    ],
+)
+def test_resolve_db_path_normalizes(raw, expected):
+    assert _resolve_db_path(raw) == expected
 
 
 def test_store_accepts_path(tmp_path):
@@ -34,14 +49,14 @@ def test_store_accepts_path(tmp_path):
     assert store.get_draft("d1")["status"] == "pending"
 
 
-def test_file_backed_db_end_to_end(tmp_path):
+def test_file_backed_db_end_to_end(tmp_path, monkeypatch):
     """Regression: configured file DB works via TestClient (create/list/patch/audit).
 
     Fails on old code — create_app passes a str to Store, and Store._conn calls
     path.parent.mkdir on the str -> AttributeError -> 500.
     """
     db_file = tmp_path / "data" / "solven.db"  # nested parent: forces mkdir in _conn
-    client = TestClient(_make_app(str(db_file)))
+    client = TestClient(_make_app(str(db_file), monkeypatch))
 
     # create draft
     r = client.post(
