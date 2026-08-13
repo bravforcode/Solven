@@ -52,7 +52,7 @@ def test_api_accepts_valid_token():
     client, settings = make_client(api_token="test-token")
     r = client.post(
         "/api/coordinator",
-        json={"agent": "grading", "input": "คำตอบ"},
+        json={"agent": "grading", "input": "คำตอบ", "rubric": "เกณฑ์"},
         headers=auth("test-token"),
     )
     assert r.status_code == 200

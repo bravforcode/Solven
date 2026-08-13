@@ -61,7 +61,7 @@ def test_file_backed_db_end_to_end(tmp_path, monkeypatch):
     # create draft
     r = client.post(
         "/api/coordinator",
-        json={"agent": "grading", "input": "คำตอบนักเรียน: 2+2=4"},
+        json={"agent": "grading", "input": "คำตอบนักเรียน: 2+2=4", "rubric": "เกณฑ์การให้คะแนน"},
         headers=_auth(),
     )
     assert r.status_code == 200, r.text

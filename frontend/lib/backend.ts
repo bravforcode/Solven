@@ -8,13 +8,19 @@ import { AgentType, Draft } from "./types";
 const API_URL =
   process.env.NEXT_PUBLIC_SOLVEN_API_URL ?? "http://localhost:8000";
 
+// Demo mode is the ONLY mode that may fabricate local mock drafts when the
+// backend is unreachable. Production (default) fails closed: backend errors
+// surface as errors and never create a draft.
+const DEMO_MODE = process.env.NEXT_PUBLIC_SOLVEN_MODE === "demo";
+
 // Bearer token for the backend — server-side only (Next.js API routes).
 // Never shipped to the browser.
 const API_TOKEN = process.env.SOLVEN_API_TOKEN ?? "";
 
 export interface RunResult {
-  draft: Draft;
+  draft?: Draft; // absent when ok=false (production backend failure)
   engine: "backend" | "mock";
+  ok: boolean;
   error?: string;
 }
 
@@ -42,6 +48,7 @@ export async function runAgent(
     if (!res.ok) throw new Error(`backend ${res.status}`);
     const d = await res.json();
     return {
+      ok: true,
       engine: "backend",
       draft: {
         id: d.id,
@@ -54,10 +61,16 @@ export async function runAgent(
       },
     };
   } catch (err) {
-    // local fallback: deterministic mock, same shape
+    const message = err instanceof Error ? err.message : String(err);
+    if (!DEMO_MODE) {
+      // fail closed: surface backend failure, never fabricate a draft
+      return { ok: false, engine: "mock", error: message };
+    }
+    // local fallback: deterministic mock, same shape (demo mode only)
     return {
+      ok: true,
       engine: "mock",
-      error: err instanceof Error ? err.message : String(err),
+      error: message,
       draft: {
         id: crypto.randomUUID(),
         agent,

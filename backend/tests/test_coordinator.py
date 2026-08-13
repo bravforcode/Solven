@@ -77,7 +77,7 @@ def test_production_app_returns_502_on_provider_failure(monkeypatch):
     monkeypatch.setattr("app.coordinator.run_sub_agent", boom)
     r = client.post(
         "/api/coordinator",
-        json={"agent": "grading", "input": "input"},
+        json={"agent": "grading", "input": "input", "rubric": "เกณฑ์"},
         headers={"Authorization": f"Bearer {'x' * 40}"},
     )
     assert r.status_code == 502, r.text
@@ -113,7 +113,7 @@ def test_dev_still_falls_back_to_mock_on_provider_error(monkeypatch):
 def test_submit_grading_creates_pending_draft(client):
     r = client.post(
         "/api/coordinator",
-        json={"agent": "grading", "input": "คำตอบนักเรียน: 2+2=4"},
+        json={"agent": "grading", "input": "คำตอบนักเรียน: 2+2=4", "rubric": "เกณฑ์การให้คะแนน"},
         headers=auth(),
     )
     assert r.status_code == 200
@@ -122,6 +122,37 @@ def test_submit_grading_creates_pending_draft(client):
     assert d["status"] == "pending"
     assert "คะแนน" in d["output"]
     assert d["id"]
+
+
+def test_grading_requires_rubric(client):
+    # AUD-H-13 / ARCH-04: grading without a rubric must fail validation (422)
+    r = client.post("/api/coordinator", json={"agent": "grading", "input": "x"}, headers=auth())
+    assert r.status_code == 422
+    assert "rubric" in r.text
+
+
+def test_grading_rejects_blank_rubric(client):
+    r = client.post(
+        "/api/coordinator",
+        json={"agent": "grading", "input": "x", "rubric": "   "},
+        headers=auth(),
+    )
+    assert r.status_code == 422
+
+
+def test_grading_with_rubric_ok(client):
+    r = client.post(
+        "/api/coordinator",
+        json={"agent": "grading", "input": "x", "rubric": "เกณฑ์การให้คะแนน"},
+        headers=auth(),
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "pending"
+
+
+def test_lesson_plan_without_rubric_ok(client):
+    r = client.post("/api/coordinator", json={"agent": "lesson-plan", "input": "x"}, headers=auth())
+    assert r.status_code == 200
 
 
 def test_unknown_agent_rejected(client):
@@ -146,7 +177,10 @@ def test_oversized_input_422(client):
 
 @pytest.mark.parametrize("agent", ["grading", "lesson-plan", "reporting"])
 def test_all_agents_route(client, agent):
-    r = client.post("/api/coordinator", json={"agent": agent, "input": "ทดสอบ"}, headers=auth())
+    payload = {"agent": agent, "input": "ทดสอบ"}
+    if agent == "grading":
+        payload["rubric"] = "เกณฑ์การให้คะแนน"
+    r = client.post("/api/coordinator", json=payload, headers=auth())
     assert r.status_code == 200
     assert r.json()["status"] == "pending"
 
@@ -163,7 +197,7 @@ def test_human_in_the_loop_approval_flow(client):
     assert r.json()["status"] == "approved"
     # reject works too
     d2 = client.post(
-        "/api/coordinator", json={"agent": "grading", "input": "x"}, headers=auth()
+        "/api/coordinator", json={"agent": "grading", "input": "x", "rubric": "เกณฑ์"}, headers=auth()
     ).json()
     r2 = client.patch(f"/api/drafts/{d2['id']}", json={"status": "rejected"}, headers=auth())
     assert r2.json()["status"] == "rejected"
@@ -175,7 +209,11 @@ def test_patch_unknown_draft_404(client):
 
 
 def test_audit_log_records_every_run(client):
-    client.post("/api/coordinator", json={"agent": "grading", "input": "คำตอบ 1"}, headers=auth())
+    client.post(
+        "/api/coordinator",
+        json={"agent": "grading", "input": "คำตอบ 1", "rubric": "เกณฑ์"},
+        headers=auth(),
+    )
     client.post(
         "/api/coordinator", json={"agent": "lesson-plan", "input": "เศษส่วน ม.1"}, headers=auth()
     )
@@ -198,7 +236,9 @@ def test_guardrail_flags_pii_in_output():
 
 def test_draft_warnings_stored(client):
     d = client.post(
-        "/api/coordinator", json={"agent": "grading", "input": "คำตอบ"}, headers=auth()
+        "/api/coordinator",
+        json={"agent": "grading", "input": "คำตอบ", "rubric": "เกณฑ์"},
+        headers=auth(),
     ).json()
     store: Store = client.app.state.store
     assert isinstance(d["warnings"], list)
