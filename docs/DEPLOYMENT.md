@@ -12,15 +12,20 @@
 
 ## 2. Deployment ตัวเลือก
 
-### 2a. Docker Compose (เร็วสุด — pilot/demo)
+### 2a. Docker Compose (เร็วสุด — demo/pilot ในเครื่อง)
+
+> ⚠️ Compose นี้เป็น **dev profile เท่านั้น** (CORS `localhost`, `SOLVEN_LLM=mock`) —
+> ตั้ง `SOLVEN_ENV=production` แล้ว `docker compose up` จะ fail ที่ Settings gate โดยตั้งใจ
+> **Production จริงใช้ §2b** (แยก service) หรือแก้ compose ให้ชี้ production เอง (ต้องมี TLS/domain จริง)
 
 ```bash
 cp backend/.env.example backend/.env   # แก้ SOLVEN_API_TOKEN ก่อน!
 export SOLVEN_API_TOKEN="$(openssl rand -hex 32)"
-export SOLVEN_ENV=dev                  # demo/pilot; production = set SOLVEN_ENV=production + no mock
+export SOLVEN_ENV=dev                  # demo/pilot
 docker compose up --build -d
 # frontend: http://localhost:3000 · backend: http://localhost:8000
-# NOTE: compose ตอนนี้ REQUIRED `SOLVEN_API_TOKEN` (ไม่มีค่า fallback dev อีกต่อไป)
+# NOTE: compose REQUIRED `SOLVEN_API_TOKEN` (ไม่มีค่า fallback dev อีกต่อไป)
+# ตรวจ preflight ใน container: docker compose run --rm -e NEXT_PUBLIC_SITE_URL=https://... backend python -m app.preflight
 ```
 
 ### 2b. แยก service (production จริง)

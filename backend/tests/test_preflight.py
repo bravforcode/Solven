@@ -4,7 +4,8 @@ from app.config import Settings
 from app.preflight import check
 
 
-def test_check_passes_for_good_values():
+def test_check_passes_for_good_values(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     s = Settings(env="dev", api_token="x" * 40, cors_origins=["https://app.example.com"], llm="auto")
     assert check(s, site_url="https://app.example.com") == []
 
@@ -36,10 +37,18 @@ def test_check_rejects_mock_llm():
 
 
 def test_check_catches_env_errors_via_settings_construction(monkeypatch):
-    # env-driven Settings() construction inside check() collects ValidationError
+    # A production deployment with the documented dev default must be reported
+    # as a failure, regardless of how Settings was constructed by the caller.
     monkeypatch.delenv("SOLVEN_API_TOKEN", raising=False)
-    monkeypatch.setenv("SOLVEN_ENV", "production")
-    monkeypatch.setenv("SOLVEN_LLM", "mock")
-    s = Settings(env="dev", api_token="x" * 40)
+    s = Settings(env="dev")  # default dev token + mock LLM + localhost CORS
     msgs = check(s, site_url="https://app.example.com")
-    assert msgs  # env-driven production construction fails on default token + mock
+    assert any("SOLVEN_API_TOKEN" in m for m in msgs)
+    assert any("SOLVEN_LLM" in m for m in msgs)
+
+
+def test_check_rejects_missing_provider_key(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    s = Settings(env="dev", api_token="x" * 40, cors_origins=["https://app.example.com"], llm="auto")
+    msgs = check(s, site_url="https://app.example.com")
+    assert any("provider key" in m for m in msgs)

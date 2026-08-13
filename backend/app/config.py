@@ -5,6 +5,7 @@ Usage:
     Settings(api_token="x")                   # explicit override (tests)
 """
 
+import os
 from typing import Annotated
 
 from pydantic import BeforeValidator, field_validator, model_validator
@@ -12,7 +13,12 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Tokens that are public knowledge / development-only and must never be
 # accepted in a production deployment.
-_KNOWN_DEV_TOKENS = {"dev-secret-change-me", "test-token", "changeme"}
+_KNOWN_DEV_TOKENS = {
+    "dev-secret-change-me",
+    "test-token",
+    "changeme",
+    "change-me-to-a-long-random-string",
+}
 
 
 def _split_origins(v):
@@ -69,17 +75,32 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _production_gates(self) -> "Settings":
-        """Fail closed for production: strong secret, real origins, no mock LLM."""
+        """Fail closed for production: strong secret, real origins, real LLM.
+
+        Collects every violation into one message so preflight reports the
+        full list of problems instead of only the first one.
+        """
         if self.env != "production":
             return self
+        problems: list[str] = []
         if len(self.api_token) < 32 or self.api_token in _KNOWN_DEV_TOKENS:
-            raise ValueError(
+            problems.append(
                 "production requires SOLVEN_API_TOKEN >= 32 chars and not a known default"
             )
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
-            raise ValueError("production SOLVEN_CORS_ORIGINS must not contain localhost/127.0.0.1")
+            problems.append("production SOLVEN_CORS_ORIGINS must not contain localhost/127.0.0.1")
         if self.llm == "mock":
-            raise ValueError("production SOLVEN_LLM must not be 'mock'")
+            problems.append("production SOLVEN_LLM must not be 'mock'")
+        if self.llm == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
+            problems.append("production SOLVEN_LLM=anthropic requires ANTHROPIC_API_KEY")
+        if self.llm == "openai" and not os.environ.get("OPENAI_API_KEY"):
+            problems.append("production SOLVEN_LLM=openai requires OPENAI_API_KEY")
+        if self.llm == "auto" and not (
+            os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        ):
+            problems.append("production SOLVEN_LLM=auto requires at least one provider key")
+        if problems:
+            raise ValueError("; ".join(problems))
         return self
 
     @field_validator("cors_origins", mode="before")

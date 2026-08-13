@@ -16,6 +16,14 @@ from app.db import Store
 from app.llm import get_llm, sha256
 
 
+class FailClosedError(RuntimeError):
+    """Raised when an LLM provider fails in a fail-closed (production) run.
+
+    The caller must translate this into a non-2xx response — the request is
+    never allowed to degrade into deterministic mock grading.
+    """
+
+
 class CoordState(TypedDict):
     task_id: str
     agent: str
@@ -33,7 +41,7 @@ def _now():
     return now_iso()
 
 
-def make_coordinator(store: Store):
+def make_coordinator(store: Store, fail_closed: bool = False):
     llm = get_llm()
 
     def route(state: CoordState) -> CoordState:
@@ -48,6 +56,11 @@ def make_coordinator(store: Store):
         try:
             output = run_sub_agent(llm, state["agent"], state["input"], state.get("rubric"))
         except httpx.HTTPStatusError:
+            if fail_closed:
+                raise FailClosedError(
+                    "LLM provider rejected the request (HTTP error); refusing to "
+                    "fall back to mock output in production"
+                ) from None
             # API key invalid/unavailable → honest fallback to deterministic mock
             # (recorded in agent_runs.status so the audit trail shows what ran)
             from app.llm import MockLLM
@@ -129,6 +142,7 @@ def run_task(
     user_input: str,
     rubric: str | None = None,
     client_task_id: str | None = None,
+    fail_closed: bool = False,
 ) -> dict:
     task_id = client_task_id or str(uuid.uuid4())
     inserted = store.create_task(task_id, agent, user_input)
@@ -150,6 +164,6 @@ def run_task(
         "passed": True,
         "retries": 0,
     }
-    make_coordinator(store).invoke(state)
+    make_coordinator(store, fail_closed=fail_closed).invoke(state)
     drafts = [d for d in store.list_drafts() if d["task_id"] == task_id]
     return drafts[0]

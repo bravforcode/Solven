@@ -35,6 +35,49 @@ def test_health(client):
     assert r.json()["status"] == "ok"
 
 
+def test_fail_closed_raises_instead_of_mock_fallback(monkeypatch):
+    """Production (fail_closed=True) must never degrade to mock output on provider error."""
+    import httpx
+
+    from app.coordinator import FailClosedError, run_task
+
+    store = Store(":memory:")
+
+    def boom(*args, **kwargs):
+        raise httpx.HTTPStatusError("401 Unauthorized", request=httpx.Request("POST", "https://x"), response=httpx.Response(401))
+
+    monkeypatch.setattr("app.coordinator.run_sub_agent", boom)
+    with pytest.raises(FailClosedError):
+        run_task(store, "grading", "input", fail_closed=True)
+
+
+def test_dev_still_falls_back_to_mock_on_provider_error(monkeypatch):
+    """Dev (fail_closed=False) keeps the honest fallback-mock path."""
+    import httpx
+
+    from app.coordinator import run_task
+
+    store = Store(":memory:")
+    calls = {"n": 0}
+
+    def boom(*args, **kwargs):
+        # fail only the real-provider attempt; the MockLLM fallback succeeds
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.HTTPStatusError(
+                "401 Unauthorized",
+                request=httpx.Request("POST", "https://x"),
+                response=httpx.Response(401),
+            )
+        return "mock fallback output"
+
+    monkeypatch.setattr("app.coordinator.run_sub_agent", boom)
+    draft = run_task(store, "grading", "input", fail_closed=False)
+    assert draft["status"] == "pending"
+    runs = store.list_runs()
+    assert runs and runs[-1]["status"] == "fallback-mock"
+
+
 def test_submit_grading_creates_pending_draft(client):
     r = client.post(
         "/api/coordinator",

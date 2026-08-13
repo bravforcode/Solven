@@ -53,7 +53,8 @@ def test_prod_rejects_known_default_tokens():
             Settings(env="production", api_token=bad)
 
 
-def test_prod_accepts_strong_token():
+def test_prod_accepts_strong_token(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     s = Settings(
         env="production",
         api_token="x" * 40,
@@ -61,6 +62,43 @@ def test_prod_accepts_strong_token():
         llm="auto",
     )
     assert s.api_token == "x" * 40
+
+
+def test_prod_accepts_exactly_32_char_token(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    s = Settings(
+        env="production",
+        api_token="a" * 32,
+        cors_origins=["https://app.example.com"],
+        llm="auto",
+    )
+    assert s.api_token == "a" * 32
+
+
+def test_prod_rejects_example_env_token():
+    # the token documented in .env.example is public knowledge → must be rejected
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="change-me-to-a-long-random-string")
+
+
+def test_prod_requires_provider_key_for_non_mock_llm(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, llm="anthropic")
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, llm="auto")
+
+
+def test_prod_accepts_llm_when_provider_key_present(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    s = Settings(
+        env="production",
+        api_token="x" * 40,
+        cors_origins=["https://app.example.com"],
+        llm="openai",
+    )
+    assert s.llm == "openai"
 
 
 def test_prod_rejects_localhost_cors():

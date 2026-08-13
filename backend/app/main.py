@@ -5,6 +5,7 @@ Run:  uvicorn app.main:app   (module-level `app` = default settings)
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -12,7 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
-from app.coordinator import run_task
+from app.coordinator import FailClosedError, run_task
 from app.db import DB_PATH, Store
 from app.middleware import (
     RateLimitMiddleware,
@@ -44,6 +45,9 @@ def _resolve_db_path(db_path: str) -> Optional[Path]:
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or Settings()
+    # Keep the LLM-mode config and the runtime provider selection in sync:
+    # app/llm.py reads SOLVEN_LLM from the environment directly.
+    os.environ.setdefault("SOLVEN_LLM", settings.llm)
     db_path = _resolve_db_path(settings.db_path) or DB_PATH
     store = Store(db_path)
 
@@ -92,7 +96,17 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def submit_task(body: TaskRequest) -> DraftOut:
         if body.agent not in VALID_AGENTS:
             raise HTTPException(400, "unknown agent")
-        draft = run_task(store, body.agent, body.input, body.rubric, body.client_task_id)
+        try:
+            draft = run_task(
+                store,
+                body.agent,
+                body.input,
+                body.rubric,
+                body.client_task_id,
+                fail_closed=settings.env == "production",
+            )
+        except FailClosedError as exc:
+            raise HTTPException(502, str(exc)) from exc
         return _to_out(draft)
 
     @app.get("/api/drafts", dependencies=[require_token], tags=["api"])

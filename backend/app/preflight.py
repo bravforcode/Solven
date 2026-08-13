@@ -31,14 +31,14 @@ def check(settings: Settings, site_url: Optional[str] = None) -> list[str]:
     try:
         Settings.model_validate({**settings.model_dump(), "env": "production"})
     except ValidationError as exc:
-        failures.extend(err["msg"] for err in exc.errors())
+        failures.extend(err["msg"].replace("Value error, ", "") for err in exc.errors())
     if not site_url or any(marker in site_url for marker in _FORBIDDEN_SITE_URL_MARKERS):
         failures.append("site_url must be a real deployment URL (placeholder rejected)")
     return failures
 
 
 def _mask(token: str) -> str:
-    if len(token) <= 4:
+    if len(token) <= 8:
         return "****"
     return "****" + token[-4:]
 
