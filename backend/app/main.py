@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
-from app.coordinator import FailClosedError, run_task
+from app.coordinator import FailClosedError, TaskNotOwnedError, run_task
 from app.db import DB_PATH, Store
 from app.middleware import (
     RateLimitMiddleware,
@@ -133,6 +133,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             )
         except FailClosedError as exc:
             raise HTTPException(502, str(exc)) from exc
+        except TaskNotOwnedError as exc:
+            raise HTTPException(403, str(exc)) from exc
         return _to_out(draft)
 
     @app.get("/api/drafts", dependencies=[require_token], tags=["api"])
@@ -159,9 +161,14 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return _to_out(updated)
 
     @app.get("/api/audit", dependencies=[require_token], tags=["api"])
-    def audit(task_id: Optional[str] = None) -> list[RunRecord]:
-        """agent_runs audit trail (Appendix A.7)."""
-        return [RunRecord(**r) for r in store.list_runs(task_id)]
+    def audit(task_id: Optional[str] = None, request: Request = None) -> list[RunRecord]:
+        """agent_runs audit trail (Appendix A.7) — tenant-scoped in production."""
+        if settings.env == "production":
+            principal = _principal(request, settings)
+            runs = store.list_runs_for_teacher(principal["teacher_id"])
+        else:
+            runs = store.list_runs(task_id)
+        return [RunRecord(**r) for r in runs]
 
     return app
 

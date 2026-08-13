@@ -175,6 +175,17 @@ class Store:
                 rows = conn.execute("SELECT * FROM agent_runs ORDER BY created_at DESC").fetchall()
         return [dict(r) for r in rows]
 
+    def list_runs_for_teacher(self, teacher_id: str) -> list[dict]:
+        """Audit runs scoped to one teacher via the owning task (AUD-H-01 / I2)."""
+        with self._c() as conn:
+            rows = conn.execute(
+                "SELECT r.* FROM agent_runs r "
+                "JOIN tasks t ON t.id = r.task_id "
+                "WHERE t.teacher_id = ? ORDER BY r.created_at DESC",
+                (teacher_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
 
 def _json(v: list[str]) -> str:
     import json

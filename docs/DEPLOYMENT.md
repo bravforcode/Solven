@@ -62,7 +62,22 @@ npm run start
 | `NEXT_PUBLIC_SOLVEN_API_URL` (frontend) | ✅ | localhost:8000 | URL backend จากมุมมอง Next.js server |
 | `SOLVEN_API_TOKEN` (frontend) | ✅ | – | token ส่งต่อจาก Next.js server → backend (ไม่รั่วถึง browser) |
 
-## 4. Checklist ก่อน production
+## 4. Identity edge contract (production จำเป็น)
+
+Production ใช้ **BFF deny-by-default + edge-injected principal** (AUD-C-03 / ARCH-03):
+
+- หน้า app ต้องอยู่หลัง identity-aware edge (OIDC/session proxy) ที่ยืนยันตัวตนครู แล้ว
+  **set header** ต่อไปนี้ทุก request (server-to-server ไปยัง Next BFF → FastAPI):
+  - `x-solven-principal` = teacher id (บังคับใน production — ไม่มี → 401)
+  - `x-solven-tenant` = school/tenant id (optional)
+- **edge MUST strip และ re-assert** header เหล่านี้ — ห้ามให้ client ตั้งเองได้
+  (ไม่งั้น impersonation ได้เต็มรูปแบบ)
+- BFF/backend ไม่ trust ค่า client ที่ส่งมา; forward เฉพาะค่า edge ที่ verify แล้ว
+- demo/dev (NEXT_PUBLIC_SOLVEN_MODE=demo, SOLVEN_ENV=dev) ใช้ identity คงที่ `demo-teacher`
+  — ไม่ต้องมี edge
+- Release gate: ทดสอบว่าส่ง request ไม่มี `x-solven-principal` ใน production → 401 ทุกรอบ
+
+## 5. Checklist ก่อน production
 
 - [ ] `SOLVEN_ENV=production` และ `SOLVEN_API_TOKEN` random ≥ 32 chars เก็บใน secret manager
 - [ ] รัน `python -m app.preflight` (backend) — ต้องออก `PREFLIGHT OK` (exit 0)
@@ -76,11 +91,11 @@ npm run start
 - [ ] Monitoring: `/health` ใช้กับ load balancer; structured log มี `request_id` ทุก request
 - [ ] รัน `python -m app.migrate` ในขั้นตอน release (ไมเกรชัน idempotent)
 
-## 5. Rollback
+## 6. Rollback
 
-- ไมเกรชันเป็น additive (index เท่านั้นใน v1) — rollback = deploy image เก่า
+- ไมเกรชัน additive (index + `drafts.teacher_id`) — rollback = deploy image เก่า (ข้อมูลไม่หาย; ระวัง code เก่าอ่านตารางใหม่ได้ปกติ)
 - การเปลี่ยน schema ที่ destructive ต้องมี migration ใหม่แยกไฟล์ และห้ามแก้ไฟล์เดิมหลัง release
 
-## 6. CI/CD
+## 7. CI/CD
 
 `.github/workflows/ci.yml` รันทุก push/PR: backend pytest (32 tests) + frontend lint/typecheck/build

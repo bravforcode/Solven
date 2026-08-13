@@ -24,6 +24,14 @@ class FailClosedError(RuntimeError):
     """
 
 
+class TaskNotOwnedError(RuntimeError):
+    """Raised when a client_task_id already belongs to another teacher.
+
+    Replay lookups are scoped by principal: reusing someone else's task id must
+    never return their draft (cross-tenant IDOR, AUD-H-01 / C1).
+    """
+
+
 class CoordState(TypedDict):
     task_id: str
     agent: str
@@ -151,12 +159,15 @@ def run_task(
     inserted = store.create_task(task_id, agent, user_input, teacher_id=teacher_id)
     if not inserted:
         # replayed request (e.g. offline-queue retry after reconnect) — return the
-        # draft already produced instead of re-running the agent.
-        existing = [d for d in store.list_drafts() if d["task_id"] == task_id]
+        # draft already produced instead of re-running the agent. The lookup is
+        # scoped to THIS teacher: a foreign task id must never leak another
+        # teacher's draft (cross-tenant IDOR).
+        existing = [d for d in store.list_drafts(teacher_id=teacher_id) if d["task_id"] == task_id]
         if existing:
             return existing[0]
-        # task row exists but no draft yet (rare race, e.g. duplicate in-flight
-        # delivery) — fall through and run normally rather than error out.
+        raise TaskNotOwnedError(
+            "client_task_id already used by another teacher (replay refused)"
+        )
     state: CoordState = {
         "task_id": task_id,
         "agent": agent,

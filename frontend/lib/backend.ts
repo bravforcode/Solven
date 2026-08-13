@@ -20,11 +20,27 @@ export type RunResult =
   | { ok: true; engine: "backend" | "mock"; draft: Draft; error?: string }
   | { ok: false; error: string };
 
+export interface BackendPrincipal {
+  teacherId: string;
+  tenant?: string;
+}
+
+/** Forward the verified BFF principal to the backend (server-to-server). */
+function principalHeaders(principal?: BackendPrincipal): Record<string, string> {
+  if (!principal) return {};
+  const headers: Record<string, string> = {
+    "x-solven-principal": principal.teacherId,
+  };
+  if (principal.tenant) headers["x-solven-tenant"] = principal.tenant;
+  return headers;
+}
+
 export async function runAgent(
   agent: AgentType,
   input: string,
   rubric?: string,
-  clientTaskId?: string
+  clientTaskId?: string,
+  principal?: BackendPrincipal
 ): Promise<RunResult> {
   try {
     const res = await fetch(`${API_URL}/api/coordinator`, {
@@ -32,6 +48,7 @@ export async function runAgent(
       headers: {
         "Content-Type": "application/json",
         ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+        ...principalHeaders(principal),
       },
       signal: AbortSignal.timeout(30000),
       body: JSON.stringify({
@@ -82,7 +99,8 @@ export async function runAgent(
 
 export async function patchDraft(
   id: string,
-  status: "approved" | "rejected"
+  status: "approved" | "rejected",
+  principal?: BackendPrincipal
 ): Promise<boolean> {
   try {
     const res = await fetch(`${API_URL}/api/drafts/${id}`, {
@@ -90,6 +108,7 @@ export async function patchDraft(
       headers: {
         "Content-Type": "application/json",
         ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+        ...principalHeaders(principal),
       },
       signal: AbortSignal.timeout(10000),
       body: JSON.stringify({ status }),

@@ -31,7 +31,7 @@ export async function PATCH(
   // AUD-H-06: backend-authoritative — for backend drafts, the mirror must
   // succeed BEFORE the local status changes. Fail closed, no optimistic update.
   if (existing.engine === "backend") {
-    const ok = await patchDraft(existing.id, status);
+    const ok = await patchDraft(existing.id, status, guard.principal);
     if (!ok) {
       return NextResponse.json(
         { error: "backend unavailable" },

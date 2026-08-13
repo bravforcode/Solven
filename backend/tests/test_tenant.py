@@ -92,6 +92,52 @@ def test_production_teacher_cannot_review_others_draft(monkeypatch):
     assert r.json()["status"] == "approved"
 
 
+def test_production_replay_cannot_leak_another_teachers_draft(monkeypatch):
+    """C1: teacher B reusing A's client_task_id must NOT receive A's draft."""
+    client = TestClient(_prod_app(monkeypatch))
+    fixed_task_id = "task-a-001"
+    d = client.post(
+        "/api/coordinator",
+        json={
+            "agent": "lesson-plan",
+            "input": "A's secret input",
+            "client_task_id": fixed_task_id,
+        },
+        headers=_auth("teacher-a"),
+    ).json()
+    assert d["id"]
+
+    # teacher B reuses A's client_task_id → must be refused (no leak, no 200)
+    r = client.post(
+        "/api/coordinator",
+        json={"agent": "lesson-plan", "input": "B's own input", "client_task_id": fixed_task_id},
+        headers=_auth("teacher-b"),
+    )
+    assert r.status_code == 403, r.text
+    assert "replay" in r.text.lower() or "another teacher" in r.text.lower()
+
+    # owner replay still returns the same draft (idempotent retry)
+    r = client.post(
+        "/api/coordinator",
+        json={"agent": "lesson-plan", "input": "x", "client_task_id": fixed_task_id},
+        headers=_auth("teacher-a"),
+    )
+    assert r.status_code == 200
+    assert r.json()["id"] == d["id"]
+
+
+def test_production_audit_scoped_to_teacher(monkeypatch):
+    """I2: audit trail must not leak another teacher's runs."""
+    client = TestClient(_prod_app(monkeypatch))
+    _submit(client, "teacher-a", agent="lesson-plan")
+    _submit(client, "teacher-b", agent="lesson-plan")
+
+    runs_a = client.get("/api/audit", headers=_auth("teacher-a")).json()
+    runs_b = client.get("/api/audit", headers=_auth("teacher-b")).json()
+    assert runs_a and runs_b
+    assert len(runs_a) == 1 and len(runs_b) == 1
+
+
 def test_dev_mode_uses_demo_teacher_without_header():
     client = TestClient(
         create_app(Settings(api_token="test-token", db_path=":memory:", env="dev"))
