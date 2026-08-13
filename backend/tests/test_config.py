@@ -113,6 +113,17 @@ def test_prod_rejects_mock_llm():
         Settings(env="production", api_token="x" * 40, llm="mock")
 
 
+def test_prod_rejects_mixed_cors_list_with_localhost(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    with pytest.raises(Exception):
+        Settings(
+            env="production",
+            api_token="x" * 40,
+            cors_origins=["https://app.example.com", "http://localhost:3000"],
+            llm="auto",
+        )
+
+
 def test_invalid_env_rejected():
     with pytest.raises(Exception):
         Settings(env="staging")

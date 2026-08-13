@@ -51,6 +51,38 @@ def test_fail_closed_raises_instead_of_mock_fallback(monkeypatch):
         run_task(store, "grading", "input", fail_closed=True)
 
 
+def test_production_app_returns_502_on_provider_failure(monkeypatch):
+    """API level: production app must surface provider failure as 502, never mock 200."""
+    import httpx
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    app = create_app(
+        Settings(
+            api_token="x" * 40,
+            db_path=":memory:",
+            env="production",
+            llm="anthropic",
+            cors_origins=["https://app.example.com"],
+        )
+    )
+    client = TestClient(app)
+
+    def boom(*args, **kwargs):
+        raise httpx.HTTPStatusError(
+            "401 Unauthorized",
+            request=httpx.Request("POST", "https://x"),
+            response=httpx.Response(401),
+        )
+
+    monkeypatch.setattr("app.coordinator.run_sub_agent", boom)
+    r = client.post(
+        "/api/coordinator",
+        json={"agent": "grading", "input": "input"},
+        headers={"Authorization": f"Bearer {'x' * 40}"},
+    )
+    assert r.status_code == 502, r.text
+
+
 def test_dev_still_falls_back_to_mock_on_provider_error(monkeypatch):
     """Dev (fail_closed=False) keeps the honest fallback-mock path."""
     import httpx

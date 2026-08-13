@@ -47,7 +47,8 @@ def _main() -> int:
     try:
         settings = Settings()
     except ValidationError as exc:
-        print("PREFLIGHT FAIL: " + "; ".join(err["msg"] for err in exc.errors()))
+        msgs = "; ".join(err["msg"].replace("Value error, ", "") for err in exc.errors())
+        print(f"PREFLIGHT FAIL: {msgs}")
         return 1
 
     failures = check(settings, site_url=os.environ.get("NEXT_PUBLIC_SITE_URL"))
