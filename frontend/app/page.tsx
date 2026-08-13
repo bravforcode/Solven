@@ -689,8 +689,11 @@ export default function Home() {
     return arr;
   }, [filtered, sort]);
 
+  // batch selection — scope to selectable (pending) ids so select-all/counts stay truthful
+  const visiblePendingIds = sorted.filter((d) => d.status === "pending").map((d) => d.id);
+
   const selection = useSelection(
-    filtered.map((d) => d.id),
+    visiblePendingIds,
     `${statusFilter}|${agentFilter}|${search}|${sort}|${drafts.length}`
   );
 
@@ -823,8 +826,6 @@ export default function Home() {
         : "ปฏิเสธ"}
     </span>
   );
-
-  const visiblePendingIds = sorted.filter((d) => d.status === "pending").map((d) => d.id);
 
   return (
     <div className="shell">
@@ -1224,7 +1225,7 @@ export default function Home() {
               )}
 
               {selection.count > 0 && (
-                <div className="bulk-bar">
+                <div className="bulk-bar" role="status">
                   <span className="bulk-count">เลือก {selection.count} รายการ</span>
                   <Button
                     size="sm"
