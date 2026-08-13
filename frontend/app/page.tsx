@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_LABEL, AgentType, Draft } from "@/lib/types";
 import { enqueueTask, flushQueue, listQueuedTasks, QueuedTask } from "@/lib/offlineQueue";
@@ -101,7 +102,8 @@ const DEMO_TASKS: { agent: AgentType; input: string; rubric?: string }[] = [
   },
   {
     agent: "reporting",
-    input: "ผู้รับ: ผู้ปกครอง\nน้ำเสียง: สุภาพ เป็นทางการ\nสรุปความก้าวหน้าของนักเรียน: อ่านหนังสือคล่องขึ้น ส่งงานตรงเวลามากขึ้น",
+    input:
+      "ผู้รับ: ผู้ปกครอง\nน้ำเสียง: สุภาพ เป็นทางการ\nเบอร์ติดต่อ: 0812345678\nสรุปความก้าวหน้าของนักเรียน: อ่านหนังสือคล่องขึ้น ส่งงานตรงเวลามากขึ้น\n(ตัวอย่างข้อมูลที่ครูอาจเผลอใส่ — ระบบจะเตือนถ้าติดไปในร่าง)",
   },
 ];
 
@@ -151,6 +153,31 @@ async function copyText(text: string): Promise<boolean> {
       return false;
     }
   }
+}
+
+/** Classify guardrail warnings into user-visible trust badges (Appendix A.9). */
+interface GuardrailTag {
+  label: string;
+  tone: "ok" | "pii" | "warn";
+}
+
+const MOCK_INFO_RE = /^รันด้วย mock/;
+
+function guardrailTags(warnings: string[]): GuardrailTag[] {
+  const real = warnings.filter((w) => !MOCK_INFO_RE.test(w));
+  if (real.length === 0) return [{ label: "Guardrail ผ่านทุกเช็ค", tone: "ok" }];
+  const tags: GuardrailTag[] = [];
+  if (real.some((w) => /เบอร์โทร|บัตรประชาชน|อีเมล/.test(w))) {
+    tags.push({ label: "พบข้อมูลส่วนตัว (PII)", tone: "pii" });
+  }
+  if (real.some((w) => /ตัวเลขคะแนน/.test(w))) {
+    tags.push({ label: "ตัวเลขไม่ตรงข้อมูลต้นทาง", tone: "warn" });
+  }
+  if (real.some((w) => /เป็นร่าง|human-in-the-loop/.test(w))) {
+    tags.push({ label: "ไม่มีคำเตือนว่าเป็นร่าง", tone: "warn" });
+  }
+  if (tags.length === 0) tags.push({ label: "ต้องตรวจทานก่อนอนุมัติ", tone: "warn" });
+  return tags;
 }
 
 function downloadDraft(d: Draft): void {
@@ -214,6 +241,8 @@ const ICON_COPY =
   "M8 8h12a1 1 0 011 1v12a1 1 0 01-1 1H8a1 1 0 01-1-1V9a1 1 0 011-1z M16 8V4a1 1 0 00-1-1H4a1 1 0 00-1 1v12a1 1 0 001 1h4";
 const ICON_DOWNLOAD =
   "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M7 10l5 5 5-5 M12 15V3";
+const ICON_SEND =
+  "M22 2L11 13 M22 2l-7 20-4-9-9-4 22-7z";
 
 /* ============ app ============ */
 
@@ -224,6 +253,7 @@ export default function Home() {
   const [draftsError, setDraftsError] = useState("");
   const [engine, setEngine] = useState<string>("");
   const [queuedCount, setQueuedCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(true);
 
   // create-form state
   const [agent, setAgent] = useState<AgentType>("grading");
@@ -331,7 +361,14 @@ export default function Home() {
 
   useEffect(() => {
     refreshQueuedCount();
-    window.addEventListener("online", flushOfflineQueue);
+    setIsOnline(navigator.onLine);
+    const onOnline = () => {
+      setIsOnline(true);
+      flushOfflineQueue();
+    };
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
     const onSwMessage = (e: MessageEvent) => {
       if (e.data?.type === "solven-sync-flushed") {
         loadDrafts();
@@ -340,7 +377,8 @@ export default function Home() {
     };
     navigator.serviceWorker?.addEventListener?.("message", onSwMessage);
     return () => {
-      window.removeEventListener("online", flushOfflineQueue);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
       navigator.serviceWorker?.removeEventListener?.("message", onSwMessage);
     };
   }, [flushOfflineQueue, loadDrafts, refreshQueuedCount]);
@@ -565,6 +603,21 @@ export default function Home() {
   async function handleCopy(d: Draft) {
     const ok = await copyText(d.output);
     pushToast(ok ? "success" : "error", ok ? "คัดลอกผลลัพธ์แล้ว" : "คัดลอกไม่สำเร็จ");
+  }
+
+  async function handleCopyLine(d: Draft) {
+    const text = [
+      `📋 ${AGENT_LABEL[d.agent]} · ${fmtTime(d.createdAt)}`,
+      "",
+      d.output,
+      "",
+      "— ร่างจาก Solven (กรุณาตรวจทานก่อนส่งต่อ) —",
+    ].join("\n");
+    const ok = await copyText(text);
+    pushToast(
+      ok ? "success" : "error",
+      ok ? "คัดลอกสำหรับ LINE แล้ว — วางในแชทได้เลย" : "คัดลอกไม่สำเร็จ"
+    );
   }
 
   /* ----- convenience: demo data + export ----- */
@@ -801,6 +854,14 @@ export default function Home() {
       <button
         type="button"
         className="btn btn-secondary btn-sm"
+        onClick={() => handleCopyLine(d)}
+        title="จัดรูปแบบให้เหมาะกับ LINE แล้วคัดลอก"
+      >
+        <Icon d={ICON_SEND} size={14} /> LINE
+      </button>
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
         onClick={() => downloadDraft(d)}
         title="ดาวน์โหลดเป็นไฟล์ .txt"
       >
@@ -824,6 +885,19 @@ export default function Home() {
         : d.status === "approved"
         ? "อนุมัติแล้ว"
         : "ปฏิเสธ"}
+    </span>
+  );
+
+  const guardrailBadge = (d: Draft) => (
+    <span
+      className="guardrail-badges"
+      title={d.warnings.length > 0 ? d.warnings.join("\n") : "ทุกผลลัพธ์ผ่านการตรวจอัตโนมัติก่อนถึงครู"}
+    >
+      {guardrailTags(d.warnings).map((t) => (
+        <span key={t.label} className={`badge badge-guardrail-${t.tone}`}>
+          {t.tone === "ok" ? "✓" : t.tone === "pii" ? "⚠" : "⚠"} {t.label}
+        </span>
+      ))}
     </span>
   );
 
@@ -851,7 +925,9 @@ export default function Home() {
           <span className="kbd-hint">
             <kbd>⌘K</kbd> คำสั่งลัด
           </span>
-          <span>v0.2.0 · JUMP THAILAND 2026</span>
+          <Link href="/about" className="sidebar-link">
+            เกี่ยวกับโปรเจกต์
+          </Link>
         </div>
       </aside>
 
@@ -879,6 +955,16 @@ export default function Home() {
             </span>
           </div>
         </header>
+
+        {!isOnline && (
+          <div className="offline-banner" role="status" aria-live="polite">
+            <span className="offline-dot" aria-hidden="true" />
+            ออฟไลน์ —{" "}
+            {queuedCount > 0
+              ? `${queuedCount} งานจะส่งอัตโนมัติเมื่อมีสัญญาณ`
+              : "งานใหม่จะถูกบันทึกในเครื่องและส่งอัตโนมัติเมื่อมีสัญญาณ"}
+          </div>
+        )}
 
         <main className="content view-in" key={view}>
           {view === "create" && (
@@ -1312,7 +1398,10 @@ export default function Home() {
                           <span className="agent-tag">{AGENT_LABEL[d.agent]}</span>
                           <span className="draft-time">{fmtTime(d.createdAt)}</span>
                         </div>
-                        {draftBadge(d)}
+                        <span className="draft-head-right">
+                          {guardrailBadge(d)}
+                          {draftBadge(d)}
+                        </span>
                       </div>
                       <div
                         className="draft-out"
@@ -1341,7 +1430,11 @@ export default function Home() {
         <footer className="footer">
           Solven prototype — ข้อมูลทั้งหมดเป็นตัวอย่าง/อยู่ในเครื่องเท่านั้น ไม่มีข้อมูลนักเรียนจริง (PDPA)
           <br />
-          JUMP THAILAND 2026 · Empowering Teachers
+          JUMP THAILAND 2026 · Empowering Teachers · v0.2.0
+          {" · "}
+          <Link href="/about" className="footer-link">
+            เกี่ยวกับโปรเจกต์
+          </Link>
         </footer>
       </div>
 
@@ -1352,7 +1445,10 @@ export default function Home() {
             <div className="draft-meta" style={{ marginBottom: 10 }}>
               <span className="agent-tag">{AGENT_LABEL[drawerDraft.agent]}</span>
               <span className="draft-time">{fmtTime(drawerDraft.createdAt)}</span>
-              {draftBadge(drawerDraft)}
+              <span className="draft-head-right">
+                {guardrailBadge(drawerDraft)}
+                {draftBadge(drawerDraft)}
+              </span>
             </div>
             <div className="draft-out">{drawerDraft.output}</div>
             {drawerDraft.warnings.length > 0 && (
