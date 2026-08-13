@@ -35,7 +35,7 @@
 ## A.1 การโฮสต์และ data residency (AIS Cloud / AIS EEC)
 
 - **Backend ทั้งหมดรันบน AIS Cloud / AIS EEC** (data center ในไทย): FastAPI service, GPU inference nodes, databases, object storage
-- **เหตุผล:** ระบบประมวลผลข้อมูลนักเรียน/ครู (ข้อมูลเด็กอายุต่ำกว่า 20 ปี = ข้อมูลอ่อนไหวตาม PDPA) — ข้อมูลต้องไม่ถูกส่งออกนอกประเทศ การโฮสต์ในไทยทำให้ compliance ง่ายและตรงโจทย์ "ใช้เทคโนโลยี AIS"
+- **เหตุผล:** ข้อมูลนักเรียน/ครูเป็นข้อมูลที่ต้องคุ้มครอง — เด็กอายุต่ำกว่า 20 ปี **ไม่ได้อยู่ในบัญชี "ข้อมูลอ่อนไหว" (sensitive data) ตาม PDPA §26** แต่เป็นข้อมูลที่ต้องได้รับความยินยอมพิเศษจากผู้ปกครอง (§20) รวมถึงหลักการลดข้อมูลให้น้อยที่สุด (data minimization) และสิทธิขอลบ (§33) · PDPA **ไม่ได้บังคับ** ให้เก็บข้อมูลในประเทศ (cross-border ทำได้ตาม §28/29 ด้วย SCCs/ความยินยอม) — การโฮสต์ในไทยจึงเป็น **ตัวเลือกเพื่ออธิปไตยข้อมูล (data sovereignty)** ไม่ใช่ข้อบังคับกฎหมาย อย่างไรก็ตามการรันบน AIS Cloud/EEC ยังคงตรงโจทย์ "ใช้เทคโนโลยี AIS" และลดความเสี่ยงเรื่องการส่งข้อมูลข้ามพรมแดน
 - Frontend static assets โฮสต์บน Vercel Edge (เนื้อหาสาธารณะเท่านั้น — ไม่มีข้อมูลนักเรียนอยู่บน edge)
 
 ## A.2 Component breakdown
@@ -96,7 +96,7 @@ submitted → routed → agent_working → guardrail_check → draft_ready → (
 - **drafts** — id, task_id, agent, input, output, status (pending/approved/rejected), reviewed_by, reviewed_at
 - **tasks** — id, teacher_id, type, state, created_at
 
-**หลักการ PDPA:** data minimization (เก็บเท่าที่จำเป็น), pseudonymization (นักเรียน), consent log, ลบเมื่อหมดความจำเป็น (retention policy), ไม่มีข้อมูลจริงใน environment ทดสอบ
+**หลักการ PDPA:** data minimization (เก็บเท่าที่จำเป็น), pseudonymization (นักเรียน), consent log, ลบเมื่อหมดความจำเป็น (retention policy), ไม่มีข้อมูลจริงใน environment ทดสอบ · สำหรับเด็กอายุต่ำกว่า 20 ปี ให้ความยินยอมจากผู้ปกครองตาม §20 (ไม่ใช่ข้อมูลอ่อนไหวตาม §26) · cross-border อนุญาตได้หากมี SCCs/แจ้งผู้ปกครองถึงการส่งข้อมูลข้ามพรมแดน
 
 ## A.8 กลยุทธ์ offline-first
 
@@ -135,6 +135,6 @@ submitted → routed → agent_working → guardrail_check → draft_ready → (
 |---|---|---|---|
 | **P1 — Pilot** | เดือน 1-4 | 10-20 โรงเรียนขนาดเล็ก (ผ่านเครือข่าย สพฐ./NIA/กองทุนเพื่อความเสมอภาคฯ) | ชั่วโมงครูที่ประหยัด, Kappa rubric, satisfaction |
 | **P2 — District** | เดือน 5-12 | ขยายสู่เขตพื้นที่การศึกษา 3-5 เขต (~1,000 ครู) + เริ่มเก็บข้อมูลผลกระทบ | อัตรา adoption รายสัปดาห์, เวลาตอบสนองผู้ปกครอง |
-| **P3 — Scale ผ่าน AIS LearnDi** | ปี 2 | Integrate เป็นโมดูลใน AIS LearnDi (ฐานผู้ใช้ครูที่มีอยู่แล้ว) + ประเมินขยาย IoT (NB-IoT/Magellan) สำหรับโรงเรียนห่างไกล | จำนวนครู active, ผลสำรวจภาระงาน, (ระยะยาว) ผลสัมฤทธิ์นักเรียน |
+| **P3 — Scale ผ่าน NDLP / ระบบนิเวศ AIS** | ปี 2 | Integrate เป็นโมดูลใน **NDLP** (ช่องทาง K-12 ของรัฐที่มีฐานครูอยู่แล้ว) และ/หรือวางเป็นเลเยอร์ครูใน **AIS AISpace** (LearnDi เป็นแพลตฟอร์มองค์กร ไม่ใช่ K-12) + ประเมินขยาย IoT (NB-IoT/Magellan) สำหรับโรงเรียนห่างไกล | จำนวนครู active, ผลสำรวจภาระงาน, (ระยะยาว) ผลสัมฤทธิ์นักเรียน |
 
 **โมเดลความยั่งยืน:** ระยะแรกเน้นผลกระทบเชิงระบบ (พาร์ตเนอร์ภาครัฐ) — โมเดลรายได้พิจารณาทีหลัง เช่น ให้หน่วยงาน/ผู้ให้บริการด้านการศึกษาจ่ายรายปีต่อโรงเรียน หรือ bundled กับบริการ AIS LearnDi
