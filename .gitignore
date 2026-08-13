@@ -13,3 +13,6 @@ build/
 *.tsbuildinfo
 # stray temp-file leak from a hook (weird PUA filename)
 C:*Users*opencode*
+
+# local QA artifacts (browser automation)
+.qa/

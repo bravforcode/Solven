@@ -86,7 +86,7 @@ const structuredData = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="th">
+    <html lang="th" className={`${inter.variable} ${notoThai.variable}`}>
       <head>
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <script
@@ -94,7 +94,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
       </head>
-      <body className={`${inter.variable} ${notoThai.variable}`}>
+      <body>
         <ServiceWorkerRegister />
         <ErrorBoundary>
           <ToastProvider>{children}</ToastProvider>
