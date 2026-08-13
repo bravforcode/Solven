@@ -138,6 +138,59 @@ def test_production_audit_scoped_to_teacher(monkeypatch):
     assert len(runs_a) == 1 and len(runs_b) == 1
 
 
+def test_in_flight_duplicate_returns_409(monkeypatch):
+    """T1-10: same-teacher duplicate while task exists but draft not yet made."""
+    from app.coordinator import InFlightError, run_task
+    from app.db import Store
+
+    store = Store(":memory:")
+    store.create_task("task-inflight", "lesson-plan", "x", teacher_id="t1")
+    try:
+        run_task(store, "lesson-plan", "x", client_task_id="task-inflight", teacher_id="t1")
+        assert False, "expected InFlightError"
+    except InFlightError:
+        pass
+
+
+def test_retention_purges_expired_only(tmp_path):
+    """T1-09: purge removes drafts older than the window, keeps fresh ones."""
+    import datetime
+
+    from app.db import Store
+
+    store = Store(tmp_path / "solven.db")
+    store.add_draft("old", "t-old", "lesson-plan", "in", "out", teacher_id="t1")
+    store.add_draft("new", "t-new", "lesson-plan", "in", "out", teacher_id="t1")
+    old = datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc).isoformat()
+    with store._c() as conn:
+        conn.execute("UPDATE drafts SET created_at=? WHERE id='old'", (old,))
+        conn.execute("UPDATE tasks SET created_at=? WHERE id='t-old'", (old,))
+
+    purged = store.purge_expired(retention_days=180)
+    assert purged == 1
+    assert store.get_draft("old") is None
+    assert store.get_draft("new") is not None
+    # orphaned task + audit rows are gone too
+    with store._c() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE id='t-old'").fetchone()[0] == 0
+
+
+def test_delete_draft_scoped(monkeypatch):
+    """T1-09: DELETE is owner-only in production; 404 for unknown."""
+    client = TestClient(_prod_app(monkeypatch))
+    d = _submit(client, "teacher-a", agent="lesson-plan").json()
+
+    r = client.delete(f"/api/drafts/{d['id']}", headers=_auth("teacher-b"))
+    assert r.status_code == 403
+
+    r = client.delete(f"/api/drafts/{d['id']}", headers=_auth("teacher-a"))
+    assert r.status_code == 200
+    assert r.json()["deleted"] == d["id"]
+
+    r = client.delete(f"/api/drafts/{d['id']}", headers=_auth("teacher-a"))
+    assert r.status_code == 404
+
+
 def test_dev_mode_uses_demo_teacher_without_header():
     client = TestClient(
         create_app(Settings(api_token="test-token", db_path=":memory:", env="dev"))

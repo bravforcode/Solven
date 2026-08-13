@@ -106,6 +106,11 @@ class Store:
             )
         return cur.rowcount > 0
 
+    def get_task(self, task_id: str) -> Optional[dict]:
+        with self._c() as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+        return dict(row) if row else None
+
     def set_task_state(self, task_id: str, state: str) -> None:
         with self._c() as conn:
             conn.execute("UPDATE tasks SET state=? WHERE id=?", (state, task_id))
@@ -186,6 +191,32 @@ class Store:
                 (teacher_id,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # ---- lifecycle (AUD-H-09 / T1-09) ----
+    def delete_draft(self, draft_id: str) -> bool:
+        """Scoped deletion (subject/tenant data-rights request)."""
+        with self._c() as conn:
+            cur = conn.execute("DELETE FROM drafts WHERE id=?", (draft_id,))
+        return cur.rowcount > 0
+
+    def purge_expired(self, retention_days: int) -> int:
+        """Delete drafts older than the retention window, plus their orphaned
+        tasks and audit runs (ISO UTC timestamps compare lexicographically)."""
+        import datetime as _dt
+
+        cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=retention_days)).isoformat()
+        with self._c() as conn:
+            expired = conn.execute(
+                "SELECT id, task_id FROM drafts WHERE created_at < ?", (cutoff,)
+            ).fetchall()
+            task_ids = [r["task_id"] for r in expired]
+            draft_ids = [r["id"] for r in expired]
+            for tid in task_ids:
+                conn.execute("DELETE FROM agent_runs WHERE task_id=?", (tid,))
+                conn.execute("DELETE FROM tasks WHERE id=?", (tid,))
+            for did in draft_ids:
+                conn.execute("DELETE FROM drafts WHERE id=?", (did,))
+        return len(draft_ids)
 
 
 def _json(v: list[str]) -> str:

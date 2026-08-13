@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     ]
     # empty -> backend/data/solven.db ; ":memory:" for tests
     db_path: str = ""
+    # Data retention (days) for drafts/tasks/runs — PDPA lifecycle (AUD-H-09).
+    # Purge runs at startup; synthetic policy assumed 180 days until the owner
+    # confirms the legal retention period.
+    retention_days: int = 180
 
     @field_validator("rate_limit_per_min")
     @classmethod

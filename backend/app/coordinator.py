@@ -32,6 +32,15 @@ class TaskNotOwnedError(RuntimeError):
     """
 
 
+class InFlightError(RuntimeError):
+    """Raised when a same-key request arrives while the task is still running.
+
+    Duplicate in-flight delivery must not re-run the agent or fabricate a
+    second draft (T1-10, AUD-H-10). The caller returns 409 so the client can
+    retry after the in-flight task completes.
+    """
+
+
 class CoordState(TypedDict):
     task_id: str
     agent: str
@@ -190,9 +199,13 @@ def run_task(
         existing = [d for d in store.list_drafts(teacher_id=teacher_id) if d["task_id"] == task_id]
         if existing:
             return existing[0]
-        raise TaskNotOwnedError(
-            "client_task_id already used by another teacher (replay refused)"
-        )
+        task = store.get_task(task_id)
+        if task and task.get("teacher_id") != teacher_id:
+            raise TaskNotOwnedError(
+                "client_task_id already used by another teacher (replay refused)"
+            )
+        # same teacher, task exists, no draft yet → duplicate in-flight delivery
+        raise InFlightError("task already in progress (duplicate delivery — retry shortly)")
     state: CoordState = {
         "task_id": task_id,
         "agent": agent,

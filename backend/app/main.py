@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
-from app.coordinator import FailClosedError, TaskNotOwnedError, run_task
+from app.coordinator import FailClosedError, InFlightError, TaskNotOwnedError, run_task
 from app.db import DB_PATH, Store
 from app.middleware import (
     RateLimitMiddleware,
@@ -83,6 +83,16 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         with sqlite3.connect(db_path, check_same_thread=False) as conn:
             apply_migrations(conn)
 
+    # PDPA lifecycle (T1-09): purge expired drafts on startup
+    try:
+        purged = store.purge_expired(settings.retention_days)
+        if purged:
+            logging.getLogger("solven").info(
+                "purged %s expired drafts (retention %sd)", purged, settings.retention_days
+            )
+    except Exception:  # noqa: BLE001 - startup must not crash on a purge failure
+        logging.getLogger("solven").warning("retention purge failed at startup", exc_info=True)
+
     app = FastAPI(title=settings.app_name, version=settings.version)
     app.state.settings = settings
     app.state.store = store
@@ -149,6 +159,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             raise HTTPException(502, str(exc)) from exc
         except TaskNotOwnedError as exc:
             raise HTTPException(403, str(exc)) from exc
+        except InFlightError as exc:
+            raise HTTPException(409, str(exc)) from exc
         return _to_out(draft)
 
     @app.get("/api/drafts", dependencies=[require_token], tags=["api"])
@@ -173,6 +185,18 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if not updated:
             raise HTTPException(404, "not found")
         return _to_out(updated)
+
+    @app.delete("/api/drafts/{draft_id}", dependencies=[require_token], tags=["api"])
+    def delete_draft(draft_id: str, request: Request) -> dict:
+        """Scoped deletion (PDPA data-rights / AUD-H-09). Owner-only in production."""
+        principal = _principal(request, settings)
+        row = store.get_draft(draft_id)
+        if not row:
+            raise HTTPException(404, "not found")
+        if settings.env == "production" and row.get("teacher_id") != principal["teacher_id"]:
+            raise HTTPException(403, "not your draft")
+        store.delete_draft(draft_id)
+        return {"deleted": draft_id}
 
     @app.get("/api/audit", dependencies=[require_token], tags=["api"])
     def audit(task_id: Optional[str] = None, request: Request = None) -> list[RunRecord]:
