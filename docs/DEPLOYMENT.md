@@ -5,7 +5,7 @@
 ## 1. สิ่งที่ต้องรู้ก่อน deploy
 
 - **ทุก `/api/*` ของ backend ต้องมี Bearer token** (`SOLVEN_API_TOKEN`) — `/health` เปิดสาธารณะเท่านั้น
-- **ข้อมูลนักเรียนเป็นข้อมูลอ่อนไหว (PDPA)** — ระบบต้องอยู่ใน data center ไทย (เป้า: AIS Cloud/EEC) และห้ามมีข้อมูลจริงใน environment ทดสอบ
+- **ข้อมูลนักเรียน (<20 ปี) ต้องได้รับความยินยอมจากผู้ปกครองตาม PDPA §20** (ไม่จัดเป็นข้อมูลอ่อนไหวตาม §26) — PDPA อนุญาต cross-border ได้ตาม §28/29 (SCCs/ความยินยอม) แต่ทีมเลือก self-host ในไทย (เป้า: AIS Cloud/EEC) เป็นตัวเลือก data sovereignty; ห้ามมีข้อมูลจริงใน environment ทดสอบ
 - LLM: `SOLVEN_LLM=mock|anthropic|openai` — สเกลจริงใช้ open-source Thai model self-host (ดู Appendix A.6)
 - DB: SQLite เหมาะกับ pilot; ก่อน scale ต้องย้าย PostgreSQL (ดู Appendix A.7)
 

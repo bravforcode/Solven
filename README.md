@@ -10,7 +10,7 @@ Thai learning outcomes are declining and unequally distributed: PISA 2022 mathem
 
 ## Solution
 
-Solven is a coordinator + 3 sub-agent system, designed to plug into the existing **AIS LearnDi (AIS Academy)** platform rather than ship as a standalone app:
+Solven is a coordinator + 3 sub-agent system, designed to plug into the state K-12 channel (**NDLP**) and the AIS ecosystem (**AIS Cloud** as the tech/data layer, **AIS AISpace** as a teacher-facing layer) rather than ship as a standalone app:
 
 | Agent | Responsibility |
 |---|---|
@@ -36,7 +36,7 @@ The full production-grade target architecture is described in [docs/appendix-a-a
 - **Frontend:** Next.js (App Router) + TypeScript
 - **Backend:** Python FastAPI + LangGraph (coordinator orchestration), SQLite
 - **LLMs:** configurable — Anthropic/OpenAI API now; Thai open-source models for scale (see Appendix A)
-- **Integration target:** AIS LearnDi / AIS Cloud (AIS EEC) — data residency in Thailand (PDPA)
+- **Integration target:** NDLP (K-12 channel) / AIS AISpace (teacher layer) / AIS Cloud (AIS EEC) — data residency in Thailand (sovereignty choice under PDPA)
 
 ## Repo Layout
 

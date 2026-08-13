@@ -27,7 +27,7 @@
 หลักการออกแบบ 4 ข้อ:
 1. **Human-in-the-loop เสมอ** — ทุกผลลัพธ์ของ agent เป็น "ร่าง" ต้องผ่านการอนุมัติของครู (มี audit trail ครบ)
 2. **Agent แยกหน้าที่** — coordinator + 3 sub-agents + guardrail ลดความผิดพลาด ตรวจสอบย้อนกลับง่าย
-3. **ข้อมูลอยู่ในไทย** — โฮสต์ใน AIS Cloud/EEC เพื่อรองรับ PDPA กับข้อมูลนักเรียน
+3. **ข้อมูลอยู่ในไทย (data sovereignty)** — โฮสต์ใน AIS Cloud/EEC: PDPA ไม่บังคับเก็บในประเทศ แต่การประมวลผลในไทยลดความเสี่ยง cross-border (§28/29) และตรงโจทย์ "ใช้เทคโนโลยี AIS" โดยตรง
 4. **ต้นทุนต่อ request ต่ำ** — เลือก open-source Thai LLM ที่ self-host เพื่อสเกลถึงหลักหมื่นครู
 
 ---
@@ -84,7 +84,7 @@ submitted → routed → agent_working → guardrail_check → draft_ready → (
 | ตอนนี้ (prototype) | API: Anthropic Claude / OpenAI GPT | เร็ว ง่าย ใช้ validate UX ก่อน |
 | หลัง hackathon (สเกลจริง) | **Typhoon2 / Typhoon (SCB 10X)** หรือ SeaLLM / OpenThaiGPT (self-host บน vLLM) | 1) ภาษาไทยคุณภาพสูง 2) ต้นทุนต่อ request ต่ำกว่า API มากเมื่อสเกลหลักหมื่นครู 3) ข้อมูลไม่ออกนอก infra ไทย 4) ปรับ fine-tune ตาม rubric/หลักสูตรไทยได้ |
 
-**เหตุผลไม่ใช้ proprietary API ในสเกลจริง:** ต้นทุนต่อ token × ปริมาณงานครูทั้งประเทศสูงมาก และข้อมูลนักเรียนจะออกนอกประเทศ (PDPA) — self-host เปิดทางให้เลือกขนาดโมเดลตามงบ GPU ของ AIS Cloud ได้
+**เหตุผลไม่ใช้ proprietary API ในสเกลจริง:** ต้นทุนต่อ token × ปริมาณงานครูทั้งประเทศสูงมาก และข้อมูลนักเรียนจะถูกประมวลผลนอก infra ที่เราควบคุม (ต้อง SCCs/ความยินยอมตาม PDPA §28/29 — เพิ่มภาระ compliance) — self-host เปิดทางให้เลือกขนาดโมเดลตามงบ GPU ของ AIS Cloud และรักษา data sovereignty
 
 ## A.7 Data model และ audit log
 

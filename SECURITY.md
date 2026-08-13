@@ -17,7 +17,7 @@
 | Input validation | Pydantic strict types + length limits (`input ≤ 50,000` chars) |
 | Audit | ทุก agent call บันทึกใน `agent_runs` (model, hashes, latency, guardrail result) + `X-Request-ID` ทุก request |
 | Guardrail | ตรวจ PII (เบอร์โทร/บัตรประชาชน/อีเมล), grounding ตัวเลข, เตือน human-in-the-loop |
-| PDPA | ข้อมูลนักเรียน pseudonymized; ระบบออกแบบให้โฮสต์ในไทย (AIS Cloud/EEC) — **ห้ามใส่ข้อมูลจริงใน repo/env ทดสอบ** |
+| PDPA | ข้อมูลนักเรียน pseudonymized; เด็ก <20 ปี ต้องได้รับความยินยอมจากผู้ปกครอง (§20) — ระบบออกแบบให้โฮสต์ในไทย (AIS Cloud/EEC) เป็นตัวเลือก data sovereignty (PDPA อนุญาต cross-border ตาม §28/29) — **ห้ามใส่ข้อมูลจริงใน repo/env ทดสอบ** |
 
 ## ขอบเขตการรองรับ
 

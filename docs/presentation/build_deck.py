@@ -324,7 +324,7 @@ for t, cy in chips:
     chip(720, cy, t)
 c.setFillColor(MUTED)
 c.setFont("Sarabun", 16)
-p(MUTED_P, "LLM: ระหว่างพัฒนาใช้ API (Anthropic/OpenAI) · สเกลจริงใช้ open-source Thai model บน AIS Cloud — ต้นทุนต่ำ + ข้อมูลไม่หลุดนอกประเทศ (PDPA)", 720, 200, 500)
+p(MUTED_P, "LLM: ระหว่างพัฒนาใช้ API (Anthropic/OpenAI) · สเกลจริงใช้ open-source Thai model บน AIS Cloud — ต้นทุนต่ำ + ข้อมูลอยู่ในไทย (data sovereignty)", 720, 200, 500)
 footer(6)
 
 # ---------------------------------------------------------------- 7 AIS INTEGRATION
@@ -333,8 +333,8 @@ heading("ใช้เทคโนโลยี AIS เป็น core ของร
 kicker("AIS Technology")
 ais = [
     ("AIS 5G", "ครูในพื้นที่ห่างไกลใช้ผ่านมือถือได้โดยตรง + กลยุทธ์ offline-first / background sync", GREEN_DARK),
-    ("AIS Cloud / EEC", "รัน backend + GPU inference + ฐานข้อมูลทั้งหมดในไทย — ข้อมูลนักเรียนไม่ออกนอกประเทศ (PDPA)", GREEN),
-    ("AIS LearnDi", "integrate เป็นโมดูลเสริมบนแพลตฟอร์มที่ AIS Academy สร้างไว้แล้ว — ลดแรงเสียดทานการ adopt ของครู", GREEN_DEEP),
+    ("AIS Cloud / EEC", "รัน backend + GPU inference + ฐานข้อมูลทั้งหมดในไทย — ข้อมูลนักเรียนอยู่ในไทย (data sovereignty; PDPA-ready)", GREEN),
+    ("NDLP (K-12)", "ต่อยอดฐานครูสพฐ. ผ่าน NDLP — ลดแรงเสียดทานการ adopt (ช่องทาง K-12 ของรัฐ)", GREEN_DEEP),
 ]
 x0 = 64
 cw = 378
@@ -380,7 +380,7 @@ kicker("Impact & Scale")
 phases = [
     ("P1 · Pilot", "เดือน 1–4", "10–20 โรง ผ่านเครือข่าย สพฐ./NIA", "KPI: ชั่วโมงครูที่ประหยัด/สัปดาห์ · ความแม่นยำเทียบครู (Kappa ≥ 0.8)"),
     ("P2 · District", "เดือน 5–12", "3–5 เขตพื้นที่ (~1,000 ครู)", "KPI: adoption รายสัปดาห์ · เวลาตอบสนองผู้ปกครอง"),
-    ("P3 · Scale", "ปี 2", "Integrate ใน AIS LearnDi + IoT ขยาย", "KPI: ครู active · ผลสำรวจภาระงาน · ผลสัมฤทธิ์ระยะยาว"),
+    ("P3 · Scale", "ปี 2", "Integrate ใน NDLP / AIS AISpace + IoT ขยาย", "KPI: ครู active · ผลสำรวจภาระงาน · ผลสัมฤทธิ์ระยะยาว"),
 ]
 x0 = 64
 cw = 378
