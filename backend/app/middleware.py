@@ -1,6 +1,7 @@
 """Middleware: security headers, request-id + structured logging, per-IP rate limiting."""
 
 import logging
+import re
 import time
 import uuid
 from collections import defaultdict, deque
@@ -14,6 +15,10 @@ logger = logging.getLogger("solven")
 _WINDOW_SECONDS = 60
 # bucket key: (app_id, client_ip) -> deque of request timestamps
 _buckets: dict[tuple[int, str], deque] = defaultdict(deque)
+
+# SEC-L-01: bounded, safe request-id format — anything else is ignored and a
+# fresh id is generated (prevents log-injection/log-blowing via this header).
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -36,16 +41,18 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     """Echo/assign X-Request-ID and log every request with context."""
 
     async def dispatch(self, request: Request, call_next):
-        request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
-        request.state.request_id = request_id
+        header_id = request.headers.get("x-request-id")
+        if not header_id or not _REQUEST_ID_RE.match(header_id):
+            header_id = uuid.uuid4().hex[:16]
+        request.state.request_id = header_id
         start = time.perf_counter()
         response = await call_next(request)
         duration_ms = int((time.perf_counter() - start) * 1000)
-        response.headers["x-request-id"] = request_id
+        response.headers["x-request-id"] = header_id
         logger.info(
             "request",
             extra={
-                "request_id": request_id,
+                "request_id": header_id,
                 "method": request.method,
                 "path": request.url.path,
                 "status": response.status_code,

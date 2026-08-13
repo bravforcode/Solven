@@ -51,12 +51,16 @@ def _conn(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # check_same_thread=False: FastAPI runs sync endpoints in a threadpool, so the
     # connection may be used from different threads (single-process demo; SQLite
     # serializes writes internally).
-    conn = sqlite3.connect(str(path), check_same_thread=False)
+    # timeout + busy_timeout + WAL (T2-04): file-backed DBs survive concurrent
+    # writers (uvicorn workers / migration startup) without SQLITE_BUSY storms.
+    conn = sqlite3.connect(str(path), check_same_thread=False, timeout=5)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
     # keep file-backed stores on the same schema as :memory: and the app startup
     # path — migrations are idempotent (tracked by name), so this is cheap.
     if path != ":memory:":
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         from app.migrate import apply_migrations
 
         apply_migrations(conn)
@@ -211,8 +215,10 @@ class Store:
         return cur.rowcount > 0
 
     def purge_expired(self, retention_days: int) -> int:
-        """Delete drafts older than the retention window, plus their orphaned
-        tasks and audit runs (ISO UTC timestamps compare lexicographically)."""
+        """Delete drafts older than the retention window, their tasks and audit
+        runs, PLUS crash-orphaned tasks (created before the cutoff with no draft
+        at all — e.g. a worker died mid-run). ISO UTC timestamps compare
+        lexicographically. Returns the number of drafts purged."""
         import datetime as _dt
 
         cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=retention_days)).isoformat()
@@ -227,6 +233,15 @@ class Store:
                 conn.execute("DELETE FROM tasks WHERE id=?", (tid,))
             for did in draft_ids:
                 conn.execute("DELETE FROM drafts WHERE id=?", (did,))
+            # crash-orphaned tasks: old tasks that never produced a draft
+            orphaned = conn.execute(
+                "SELECT id FROM tasks WHERE created_at < ? "
+                "AND id NOT IN (SELECT task_id FROM drafts)",
+                (cutoff,),
+            ).fetchall()
+            for row in orphaned:
+                conn.execute("DELETE FROM agent_runs WHERE task_id=?", (row["id"],))
+                conn.execute("DELETE FROM tasks WHERE id=?", (row["id"],))
         return len(draft_ids)
 
 

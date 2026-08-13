@@ -47,8 +47,14 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-logging.getLogger().handlers[0].setFormatter(JsonFormatter())
+# structured JSON logging on root — configured explicitly (no handlers[0]
+# assumption) so the app works regardless of how logging was preconfigured.
+_root = logging.getLogger()
+_root.setLevel(logging.INFO)
+if not _root.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(JsonFormatter())
+    _root.addHandler(_handler)
 
 VALID_AGENTS = {"grading", "lesson-plan", "reporting"}
 
@@ -117,7 +123,15 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     except Exception:  # noqa: BLE001 - startup must not crash on a purge failure
         logging.getLogger("solven").warning("retention purge failed at startup", exc_info=True)
 
-    app = FastAPI(title=settings.app_name, version=settings.version)
+    # SEC-L-02: interactive API docs + OpenAPI are dev affordances — hide them
+    # in production so the schema/route map is not public.
+    app = FastAPI(
+        title=settings.app_name,
+        version=settings.version,
+        docs_url=None if settings.env == "production" else "/docs",
+        redoc_url=None if settings.env == "production" else "/redoc",
+        openapi_url=None if settings.env == "production" else "/openapi.json",
+    )
     app.state.settings = settings
     app.state.store = store
 
