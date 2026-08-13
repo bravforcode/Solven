@@ -130,6 +130,7 @@
 
 ## Portfolio / หลักฐานความสามารถของทีม
 
+- **Live demo (Vercel):** [solven.vercel.app](https://solven.vercel.app) — prototype รันได้จริงบนเว็บ เปิดดูได้ทันทีไม่ต้องติดตั้ง หน้า [/about](https://solven.vercel.app/about) มี evidence table (built vs target) สถาปัตยกรรม และแผนต่อยอด — กรรมการทดสอบเองได้โดยไม่ต้องรันโค้ด
 - **GitHub repo:** [github.com/bravforcode/Solven](https://github.com/bravforcode/Solven) — มี prototype ที่รันได้ (Next.js UI + coordinator + 3 agents + review queue) README อธิบายสถาปัตยกรรม multi-agent และสถานะการพัฒนาอย่างตรงไปตรงมา
 - แนบอ้างอิงผลงานเดิมของทีม (ระบบ AI agent orchestration ที่เคยสร้างสำหรับงานอัตโนมัติระดับองค์กร) เป็นหลักฐานสนับสนุนความสามารถด้านเทคนิค ควบคู่กับ repo ใหม่ของโปรเจกต์นี้
 - สถาปัตยกรรมเป้าหมายระดับ production: docs/appendix-a-architecture.md ใน repo

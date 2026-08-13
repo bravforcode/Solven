@@ -4,6 +4,11 @@ Multi-agent AI system that gives Thai teachers their time back — automates gra
 
 Built for **JUMP THAILAND Hackathon 2026** (AIS) — theme: *AI for the Future of Thai Education*, challenge: *Empowering Teachers*.
 
+## Live Demo
+
+- **https://solven.vercel.app** — working prototype on the web (PWA + offline queue + guardrail badges in review queue)
+- **https://solven.vercel.app/about** — evidence table (built vs target), architecture, and post-Demo-Day roadmap
+
 ## Problem
 
 Thai learning outcomes are declining and unequally distributed: PISA 2022 mathematics score for Thailand = **394** (OECD), down from 419 in 2018. A major structural driver is teacher shortage and misallocation in small schools (TDRI research) — teachers in understaffed schools carry a disproportionate load of admin/grading work instead of instruction (OECD TALIS). World Bank (2015) evidence shows restoring teacher time directly lifts student achievement.
