@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
+import { useFocusTrap, useScrollLock } from "@/lib/focus";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -13,7 +14,7 @@ interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
-/** Minimal confirmation dialog — reuses .drawer-mask overlay + .panel; Esc cancels, focus lands on confirm */
+/** Minimal confirmation dialog — reuses .drawer-mask overlay + .panel; Esc cancels, focus lands on confirm, focus trapped */
 export default function ConfirmDialog({
   open,
   title,
@@ -24,6 +25,10 @@ export default function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(dialogRef, open);
+  useScrollLock(open);
 
   useEffect(() => {
     if (!open) return;
@@ -44,6 +49,7 @@ export default function ConfirmDialog({
       onClick={onCancel}
     >
       <div
+        ref={dialogRef}
         className="panel panel-pad"
         role="dialog"
         aria-modal="true"

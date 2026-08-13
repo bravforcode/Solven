@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { filterCommands } from "@/lib/commands";
 import type { CommandItem } from "@/lib/commands";
+import { useFocusTrap, useScrollLock } from "@/lib/focus";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -16,8 +17,13 @@ export default function CommandPalette({ open, onClose, items }: CommandPaletteP
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(panelRef, open);
+  useScrollLock(open);
 
   const filtered = useMemo(() => filterCommands(items, query), [items, query]);
+  const activeId = filtered[active] ? `cmd-opt-${filtered[active].id}` : undefined;
 
   // reset + focus on open
   useEffect(() => {
@@ -60,7 +66,7 @@ export default function CommandPalette({ open, onClose, items }: CommandPaletteP
 
   return (
     <div className="cmd-palette" role="dialog" aria-modal="true" aria-label="คำสั่งลัด">
-      <div className="cmd-panel">
+      <div className="cmd-panel" ref={panelRef}>
         <div className="cmd-input-wrap">
           <svg
             width={16}
@@ -90,6 +96,7 @@ export default function CommandPalette({ open, onClose, items }: CommandPaletteP
             role="combobox"
             aria-expanded={filtered.length > 0}
             aria-controls="cmd-list"
+            aria-activedescendant={activeId}
             aria-label="ค้นหาคำสั่ง"
           />
           <span className="kbd-hint">
@@ -102,7 +109,7 @@ export default function CommandPalette({ open, onClose, items }: CommandPaletteP
         ) : (
           <ul className="cmd-list" id="cmd-list" role="listbox" aria-label="รายการคำสั่ง">
             {filtered.map((item, i) => (
-              <li key={item.id} role="option" aria-selected={i === active}>
+              <li key={item.id} id={`cmd-opt-${item.id}`} role="option" aria-selected={i === active}>
                 <button
                   type="button"
                   className="cmd-item"
