@@ -7,9 +7,9 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
@@ -41,6 +41,30 @@ def _resolve_db_path(db_path: str) -> Optional[Path]:
     if db_path.strip() == ":memory:":
         return db_path.strip()  # type: ignore[return-value]  # magic string handled by Store
     return Path(db_path.strip())
+
+
+class _Principal(TypedDict):
+    teacher_id: str
+    tenant: Optional[str]
+
+
+def _principal(request: Request, settings: Settings) -> _Principal:
+    """Extract the verified principal from trusted edge-injected headers.
+
+    ASSUMPTION (documented, see docs/audits/2026-08-13/02_implementation_plan.md):
+    in production the app sits behind an identity-aware edge (OIDC/session proxy)
+    that sets `x-solven-principal` (and optionally `x-solven-tenant`). These
+    headers MUST be stripped/re-asserted by the edge — the BFF/backend never
+    trusts client-supplied values. In dev/demo mode the principal is a fixed
+    demo identity so local development still works.
+    """
+    if settings.env != "production":
+        return {"teacher_id": "demo-teacher", "tenant": None}
+    teacher_id = request.headers.get("x-solven-principal")
+    if not teacher_id or not teacher_id.strip():
+        raise HTTPException(status_code=401, detail="missing verified principal (x-solven-principal)")
+    tenant = request.headers.get("x-solven-tenant")
+    return {"teacher_id": teacher_id.strip(), "tenant": (tenant.strip() if tenant else None)}
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
@@ -93,9 +117,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return {"status": "ok", "version": settings.version}
 
     @app.post("/api/coordinator", dependencies=[require_token], tags=["api"])
-    def submit_task(body: TaskRequest) -> DraftOut:
+    def submit_task(body: TaskRequest, request: Request) -> DraftOut:
         if body.agent not in VALID_AGENTS:
             raise HTTPException(400, "unknown agent")
+        principal = _principal(request, settings)
         try:
             draft = run_task(
                 store,
@@ -104,23 +129,34 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 body.rubric,
                 body.client_task_id,
                 fail_closed=settings.env == "production",
+                teacher_id=principal["teacher_id"],
             )
         except FailClosedError as exc:
             raise HTTPException(502, str(exc)) from exc
         return _to_out(draft)
 
     @app.get("/api/drafts", dependencies=[require_token], tags=["api"])
-    def list_drafts() -> list[DraftOut]:
-        return [_to_out(d) for d in store.list_drafts()]
+    def list_drafts(request: Request) -> list[DraftOut]:
+        principal = _principal(request, settings)
+        # production: drafts are scoped to the authenticated teacher
+        teacher_id = principal["teacher_id"] if settings.env == "production" else None
+        return [_to_out(d) for d in store.list_drafts(teacher_id=teacher_id)]
 
     @app.patch("/api/drafts/{draft_id}", dependencies=[require_token], tags=["api"])
-    def patch_draft(draft_id: str, body: PatchDraft) -> DraftOut:
+    def patch_draft(draft_id: str, body: PatchDraft, request: Request) -> DraftOut:
         if body.status not in ("approved", "rejected"):
             raise HTTPException(400, "invalid status")
-        row = store.set_draft_status(draft_id, body.status)
+        principal = _principal(request, settings)
+        row = store.get_draft(draft_id)
         if not row:
             raise HTTPException(404, "not found")
-        return _to_out(row)
+        # ownership check: a teacher can only review their own drafts
+        if settings.env == "production" and row.get("teacher_id") != principal["teacher_id"]:
+            raise HTTPException(403, "not your draft")
+        updated = store.set_draft_status(draft_id, body.status)
+        if not updated:
+            raise HTTPException(404, "not found")
+        return _to_out(updated)
 
     @app.get("/api/audit", dependencies=[require_token], tags=["api"])
     def audit(task_id: Optional[str] = None) -> list[RunRecord]:

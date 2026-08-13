@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { runAgent } from "@/lib/backend";
+import { requirePrincipal } from "@/lib/bffAuth";
 import { addDraft } from "@/lib/store";
 import { AgentType } from "@/lib/types";
 
 const VALID_AGENTS: AgentType[] = ["grading", "lesson-plan", "reporting"];
 
 export async function POST(req: NextRequest) {
+  // AUD-C-03 / SEC-C-01: deny by default — production requires a verified
+  // principal (edge-injected header); the service token is never accepted
+  // from the browser.
+  const guard = requirePrincipal(req);
+  if (!guard.ok) return guard.response;
+  const principal = guard.principal;
+
   const body = await req.json();
   const { agent, input, rubric, client_task_id } = body as {
     agent: AgentType;
@@ -43,6 +51,7 @@ export async function POST(req: NextRequest) {
     ...result.draft,
     id: result.engine === "backend" ? result.draft.id : randomUUID(),
     engine: result.engine,
+    teacherId: principal.teacherId,
   };
   addDraft({ ...draft, warnings: draft.warnings ?? [] });
 

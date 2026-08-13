@@ -54,6 +54,12 @@ def _conn(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    # keep file-backed stores on the same schema as :memory: and the app startup
+    # path — migrations are idempotent (tracked by name), so this is cheap.
+    if path != ":memory:":
+        from app.migrate import apply_migrations
+
+        apply_migrations(conn)
     return conn
 
 
@@ -67,10 +73,13 @@ class Store:
         self._mem_conn: Optional[sqlite3.Connection] = None
         if db_path == ":memory:":
             # SQLite :memory: databases are per-connection — share ONE connection
-            # so writes from different calls hit the same database.
+            # so writes from different calls hit the same database. Migrations
+            # are applied so :memory: matches file-backed behavior exactly.
+            from app.migrate import apply_migrations
+
             self._mem_conn = _conn(":memory:")
             self._mem_conn.row_factory = sqlite3.Row
-            self._mem_conn.executescript(_SCHEMA)
+            apply_migrations(self._mem_conn)
 
     def _c(self) -> sqlite3.Connection:
         if self._mem_conn is not None:
@@ -78,14 +87,22 @@ class Store:
         return _conn(self._db_path)
 
     # ---- tasks ----
-    def create_task(self, task_id: str, agent: str, input_text: str, state: str = "submitted") -> bool:
+    def create_task(
+        self,
+        task_id: str,
+        agent: str,
+        input_text: str,
+        state: str = "submitted",
+        teacher_id: Optional[str] = None,
+    ) -> bool:
         """Insert a task. Returns False (no-op) if task_id already exists —
         lets callers detect a replayed request (offline-queue retry) and skip
         re-running the agent instead of duplicating work."""
         with self._c() as conn:
             cur = conn.execute(
-                "INSERT OR IGNORE INTO tasks (id, agent, input, state, created_at) VALUES (?,?,?,?,?)",
-                (task_id, agent, input_text, state, now_iso()),
+                "INSERT OR IGNORE INTO tasks (id, teacher_id, agent, input, state, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (task_id, teacher_id, agent, input_text, state, now_iso()),
             )
         return cur.rowcount > 0
 
@@ -94,19 +111,33 @@ class Store:
             conn.execute("UPDATE tasks SET state=? WHERE id=?", (state, task_id))
 
     # ---- drafts ----
-    def add_draft(self, draft_id: str, task_id: str, agent: str, input_text: str, output: str,
-                  warnings: Optional[list[str]] = None) -> None:
+    def add_draft(
+        self,
+        draft_id: str,
+        task_id: str,
+        agent: str,
+        input_text: str,
+        output: str,
+        warnings: Optional[list[str]] = None,
+        teacher_id: Optional[str] = None,
+    ) -> None:
         with self._c() as conn:
             conn.execute(
-                "INSERT INTO drafts (id, task_id, agent, input, output, status, warnings, created_at) "
-                "VALUES (?,?,?,?,?, 'pending', ?, ?)",
-                (draft_id, task_id, agent, input_text, output,
+                "INSERT INTO drafts (id, task_id, teacher_id, agent, input, output, status, warnings, created_at) "
+                "VALUES (?,?,?,?,?,?, 'pending', ?, ?)",
+                (draft_id, task_id, teacher_id, agent, input_text, output,
                  _json(warnings or []), now_iso()),
             )
 
-    def list_drafts(self) -> list[dict]:
+    def list_drafts(self, teacher_id: Optional[str] = None) -> list[dict]:
         with self._c() as conn:
-            rows = conn.execute("SELECT * FROM drafts ORDER BY created_at DESC").fetchall()
+            if teacher_id:
+                rows = conn.execute(
+                    "SELECT * FROM drafts WHERE teacher_id=? ORDER BY created_at DESC",
+                    (teacher_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM drafts ORDER BY created_at DESC").fetchall()
         return [dict(r) for r in rows]
 
     def get_draft(self, draft_id: str) -> Optional[dict]:

@@ -33,6 +33,7 @@ class CoordState(TypedDict):
     warnings: list[str]
     passed: bool
     retries: int
+    teacher_id: str | None
 
 
 def _now():
@@ -113,6 +114,7 @@ def make_coordinator(store: Store, fail_closed: bool = False):
             input_text=state["input"],
             output=state["output"],
             warnings=state["warnings"],
+            teacher_id=state.get("teacher_id"),
         )
         store.set_task_state(state["task_id"], "draft_ready")
         return {}
@@ -143,9 +145,10 @@ def run_task(
     rubric: str | None = None,
     client_task_id: str | None = None,
     fail_closed: bool = False,
+    teacher_id: str | None = None,
 ) -> dict:
     task_id = client_task_id or str(uuid.uuid4())
-    inserted = store.create_task(task_id, agent, user_input)
+    inserted = store.create_task(task_id, agent, user_input, teacher_id=teacher_id)
     if not inserted:
         # replayed request (e.g. offline-queue retry after reconnect) — return the
         # draft already produced instead of re-running the agent.
@@ -163,6 +166,7 @@ def run_task(
         "warnings": [],
         "passed": True,
         "retries": 0,
+        "teacher_id": teacher_id,
     }
     make_coordinator(store, fail_closed=fail_closed).invoke(state)
     drafts = [d for d in store.list_drafts() if d["task_id"] == task_id]

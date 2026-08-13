@@ -78,7 +78,10 @@ def test_production_app_returns_502_on_provider_failure(monkeypatch):
     r = client.post(
         "/api/coordinator",
         json={"agent": "grading", "input": "input", "rubric": "เกณฑ์"},
-        headers={"Authorization": f"Bearer {'x' * 40}"},
+        headers={
+            "Authorization": f"Bearer {'x' * 40}",
+            "x-solven-principal": "teacher-a",
+        },
     )
     assert r.status_code == 502, r.text
 

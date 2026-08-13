@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { patchDraft } from "@/lib/backend";
+import { requirePrincipal } from "@/lib/bffAuth";
 import { listDrafts, updateDraftStatus } from "@/lib/store";
 import { DraftStatus } from "@/lib/types";
 
@@ -7,6 +8,10 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // AUD-C-03: deny by default — production requires a verified principal.
+  const guard = requirePrincipal(req);
+  if (!guard.ok) return guard.response;
+
   const { status } = (await req.json()) as { status: DraftStatus };
 
   if (status !== "approved" && status !== "rejected") {
@@ -16,6 +21,14 @@ export async function PATCH(
   const existing = listDrafts().find((d) => d.id === params.id);
   if (!existing) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  // AUD-H-01: ownership — a teacher can only review their own drafts.
+  if (
+    guard.principal.teacherId !== "demo-teacher" &&
+    existing.teacherId &&
+    existing.teacherId !== guard.principal.teacherId
+  ) {
+    return NextResponse.json({ error: "not your draft" }, { status: 403 });
   }
 
   // AUD-H-06: backend-authoritative — for backend drafts, the mirror must
@@ -31,5 +44,8 @@ export async function PATCH(
   }
 
   const draft = updateDraftStatus(params.id, status);
+  if (!draft) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   return NextResponse.json(draft);
 }
