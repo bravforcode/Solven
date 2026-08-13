@@ -124,6 +124,41 @@ export async function patchDraft(
   }
 }
 
+/** T1-03: read drafts from the authoritative backend (scoped by principal). */
+export async function listBackendDrafts(
+  principal: BackendPrincipal
+): Promise<Draft[]> {
+  const res = await fetch(`${API_URL}/api/drafts`, {
+    method: "GET",
+    headers: {
+      ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+      ...principalHeaders(principal),
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`backend ${res.status}`);
+  const rows = (await res.json()) as Array<{
+    id: string;
+    agent: AgentType;
+    input: string;
+    output: string;
+    status: Draft["status"];
+    warnings?: string[];
+    createdAt: string;
+  }>;
+  return rows.map((d) => ({
+    id: d.id,
+    agent: d.agent,
+    input: d.input,
+    output: d.output,
+    status: d.status,
+    warnings: d.warnings ?? [],
+    createdAt: d.createdAt,
+    engine: "backend" as const,
+    teacherId: principal.teacherId,
+  }));
+}
+
 export function localMock(agent: AgentType, input: string): string {
   if (agent === "grading") {
     return [
