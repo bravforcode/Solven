@@ -73,6 +73,10 @@ Production ใช้ **BFF deny-by-default + edge-injected principal** (AUD-C-03
 - **edge MUST strip และ re-assert** header เหล่านี้ — ห้ามให้ client ตั้งเองได้
   (ไม่งั้น impersonation ได้เต็มรูปแบบ)
 - BFF/backend ไม่ trust ค่า client ที่ส่งมา; forward เฉพาะค่า edge ที่ verify แล้ว
+- **offline queue (SW flush) ใช้ได้กับ edge แบบ cookie/session เท่านั้น** — SW fetch
+  same-origin จะส่ง cookie ไปด้วย แล้ว edge inject `x-solven-principal` ได้;
+  ถ้า edge เป็น token-only (ไม่มี cookie) → offline queue จะ flush ไม่ได้ (401 ทุกรอบ)
+  ให้ปิด offline queue ในการตั้งค่าแบบนั้น
 - demo/dev (NEXT_PUBLIC_SOLVEN_MODE=demo, SOLVEN_ENV=dev) ใช้ identity คงที่ `demo-teacher`
   — ไม่ต้องมี edge
 - Release gate: ทดสอบว่าส่ง request ไม่มี `x-solven-principal` ใน production → 401 ทุกรอบ

@@ -77,6 +77,10 @@ function removeQueued(db, clientTaskId) {
 }
 
 async function flushOfflineQueue() {
+  // NOTE (prod): the offline flush depends on a cookie/session-based edge —
+  // same-origin fetch() from the SW carries cookies, so the identity edge can
+  // inject x-solven-principal. Token-only edge deployments MUST disable the
+  // offline queue (requests would 401 and the queue would never drain).
   const db = await openQueueDb();
   const tasks = await listQueued(db);
   let flushed = 0;
