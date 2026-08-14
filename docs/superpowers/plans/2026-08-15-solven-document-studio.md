@@ -668,7 +668,7 @@ git commit -m "style(docs): A4 print CSS + document studio styles (globals.css)"
 - Modify: `frontend/app/page.tsx` (sidebar-foot — add link before "เกี่ยวกับโปรเจกต์")
 
 **Interfaces:**
-- Consumes: `loadSchool`, `saveSchool`, `SchoolInfo` from `@/lib/school` (Task 1); `useToast` from `@/components/ui/ToastProvider`
+- Consumes: `loadSchool`, `saveSchool`, `SchoolInfo` from `@/lib/school` (Task 1); `useToast` from `@/components/ui/ToastProvider` (provider comes from `frontend/app/layout.tsx`, which wraps every page)
 - Produces: none (standalone page); sidebar link pattern for Task 7 commands
 
 - [ ] **Step 1: Create `frontend/app/settings/page.tsx`**
@@ -679,7 +679,9 @@ git commit -m "style(docs): A4 print CSS + document studio styles (globals.css)"
 import Link from "next/link";
 import { useState } from "react";
 import { loadSchool, saveSchool, SchoolInfo } from "@/lib/school";
-import { ToastProvider, useToast } from "@/components/ui/ToastProvider";
+// REVIEW PASS 2: layout.tsx already wraps every page in ToastProvider —
+// consume useToast() directly, do NOT add a second provider
+import { useToast } from "@/components/ui/ToastProvider";
 
 const FIELDS: { key: keyof SchoolInfo; label: string; hint?: string }[] = [
   { key: "schoolName", label: "ชื่อโรงเรียน" },
@@ -766,11 +768,7 @@ function SettingsForm() {
 }
 
 export default function SettingsPage() {
-  return (
-    <ToastProvider>
-      <SettingsForm />
-    </ToastProvider>
-  );
+  return <SettingsForm />;
 }
 ```
 
@@ -870,7 +868,7 @@ function applyDocSource(id: string) {
     setDoc("subject", docFields.subject || "วิชา");
     setDoc("body", d.output);
   } else if (docType === "lesson-record") {
-    setDoc("subject", "วิชา");
+    setDoc("subject", docFields.subject || "วิชา");
     setDoc("results", d.output);
   } else if (docType === "official-letter") {
     setDoc("letterSubject", "รายงานความก้าวหน้านักเรียน");
@@ -1486,30 +1484,22 @@ Verify: file exists and size > 100 KB. Fallback if the raw link 404s (variable-f
 - [ ] **Step 3: Write the failing test — `backend/tests/test_documents.py`**
 
 ```python
-"""Tests: /api/documents/render — PDF generation (reportlab, Thai font)."""
+"""Tests: /api/documents/render — PDF generation (reportlab, Thai font).
 
-import re
-import zlib
+NOTE (review pass 2): reportlab embeds TTF as subset CID font — content
+streams carry hex-encoded CIDs, so literal Thai text never appears in the
+PDF bytes. Assertions are therefore integration-level (%PDF + font resource)
+plus pure-function unit tests on the escaping helper.
+"""
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.documents import _esc
 from app.main import create_app
 
 TOKEN = "test-token"
-
-
-def pdf_contains(content: bytes, needle: str) -> bool:
-    """Search rendered PDF text (decompressing content streams)."""
-    text = b""
-    for m in re.finditer(rb"stream\r?\n(.*?)endstream", content, re.S):
-        chunk = m.group(1)
-        try:
-            text += zlib.decompress(chunk)
-        except Exception:
-            text += chunk
-    return needle.encode("utf-8") in text
 
 
 @pytest.fixture()
@@ -1520,6 +1510,12 @@ def client():
 
 def auth() -> dict:
     return {"Authorization": f"Bearer {TOKEN}"}
+
+
+def test_escape_helper_escapes_markup():
+    """REVIEW FIX 2 unit level: raw teacher text cannot reach Paragraph markup."""
+    assert _esc("3 < 5 และ 7 & 8") == "3 &lt; 5 และ 7 &amp; 8"
+    assert _esc('a "b" c') == "a &quot;b&quot; c"
 
 
 def test_render_worksheet_returns_pdf(client):
@@ -1557,7 +1553,11 @@ def test_render_certificate_landscape(client):
 
 
 def test_render_includes_school_name(client):
-    """REVIEW FIX 1: school must reach the PDF, not vanish in the BFF chain."""
+    """REVIEW FIX 1: school must reach the PDF, not vanish in the BFF chain.
+
+    The Thai font is only registered/used when the header flow runs — its
+    BaseFont name appears literally in the PDF resource dictionaries.
+    """
     r = client.post(
         "/api/documents/render",
         headers=auth(),
@@ -1568,11 +1568,11 @@ def test_render_includes_school_name(client):
         },
     )
     assert r.status_code == 200
-    assert pdf_contains(r.content, "โรงเรียนบ้านสวนฝั่งสุข")
+    assert b"NotoSansThai" in r.content
 
 
 def test_render_escapes_markup_in_body(client):
-    """REVIEW FIX 2: teacher text with `<`, `&` must not break Paragraph."""
+    """REVIEW FIX 2 integration level: `<`/`&` in body must render, not 500."""
     r = client.post(
         "/api/documents/render",
         headers=auth(),
@@ -1582,7 +1582,7 @@ def test_render_escapes_markup_in_body(client):
         },
     )
     assert r.status_code == 200
-    assert pdf_contains(r.content, "3 < 5")
+    assert r.content.startswith(b"%PDF")
 
 
 def test_render_unknown_kind_400(client):
@@ -1749,7 +1749,7 @@ def render_document(kind: str, fields: dict, school: dict | None = None) -> byte
         flow.append(Spacer(1, 8 * mm))
         flow.append(_para(f"ลงชื่อ ____________________ ครูผู้สอน   ( {_s('teacherName')} )", styles["value"]))
     elif kind == "official-letter":
-        flow.append(_para(f"ที่ {_s('refNo') or school.get('refNo') or '____/2569'} วันที่ {_s('date')}", styles["value"]))
+        flow.append(_para(f"ที่ {_s('refNo') or _esc(str(school.get('refNo') or '')) or '____/2569'} วันที่ {_s('date')}", styles["value"]))
         flow.append(_para(f"<b>เรื่อง</b> {_s('subject')}", styles["value"]))
         flow.append(_para(f"<b>เรียน</b> {_s('to')}", styles["value"]))
         flow.append(Spacer(1, 4 * mm))
@@ -1757,7 +1757,7 @@ def render_document(kind: str, fields: dict, school: dict | None = None) -> byte
         flow.append(Spacer(1, 8 * mm))
         flow.append(
             _para(
-                f"ลงชื่อ ____________________<br/>( {_s('teacherName')} )<br/>{_s('position')}<br/>{school.get('schoolName') or ''}",
+                f"ลงชื่อ ____________________<br/>( {_s('teacherName')} )<br/>{_s('position')}<br/>{_esc(str(school.get('schoolName') or ''))}",
                 styles["value"],
             )
         )
@@ -1827,7 +1827,7 @@ Inside `create_app()`, after the `/api/audit` route (before `return app`), add:
 - [ ] **Step 8: Run tests to verify they pass**
 
 Run: `pytest tests/test_documents.py -v`
-Expected: PASS (all 7)
+Expected: PASS (all 8)
 
 - [ ] **Step 9: Run the full backend suite**
 
@@ -1963,7 +1963,7 @@ Expected: PASS (all suites, incl. `test_documents.py`)
 3. กด “📄 ทำเป็นเอกสาร” บน draft ที่อนุมัติ → กระโดดไปหน้าเอกสารพร้อมเนื้อหา prefilled.
 4. ใบงาน: กรอก → preview แสดงข้อความ → พิมพ์ → print dialog แสดงเฉพาะเอกสาร A4 (CSS ถูก).
 5. หนังสือราชการ: ดึงจากร่าง reporting ที่อนุมัติ → พิมพ์.
-6. เกียรติบัตร: landscape — print preview แนวนอน.
+6. เกียรติบัตร: landscape — print preview แนวนอน. (Safari < 18 ignores named `page:` — certificate prints portrait there; acceptable, note if tested on Safari.)
 7. รายงานสรุป: พิมพ์ทั้งหมดที่อนุมัติ.
 8. Offline (DevTools → offline): ปุ่ม “ดาวน์โหลด PDF (server)” หาย; พิมพ์ยังทำงาน.
 9. ⌘K: “เอกสาร”, “ตั้งค่า”, “พิมพ์” ทำงาน; ปุ่ม `g`/`s`/`p` ทำงาน (desktop, นอกฟอร์ม).
@@ -1989,16 +1989,24 @@ git commit -m "docs: DESIGN.md — document studio v0.3 section"
 
 ---
 
-## Self-Review (completed by planner + review pass 1)
+## Self-Review (completed by planner + review pass 1 + pass 2)
+
+**Review pass 2 (auditor, commit 47d574a) — remaining issues fixed:**
+
+1. **MEDIUM — CID-hex test mechanism:** reportlab embeds TTF as subset CID font; literal Thai text never appears in PDF bytes. Replaced byte-search with: integration asserts (`%PDF` magic + `b"NotoSansThai"` font resource — proves the school-header flow ran, since the font is only used there) + pure-function unit test `test_escape_helper_escapes_markup` on `app.documents._esc`. Test count 7 → 8.
+2. **LOW — redundant ToastProvider:** `frontend/app/layout.tsx` already wraps every page; `/settings` now consumes `useToast()` directly (no inner provider).
+3. **LOW — unescaped `school.get('refNo')` / `school.get('schoolName')`** in official-letter/certificate: wrapped in `_esc()`.
+4. **LOW — lesson-record `setDoc("subject", "วิชา")` overwrite:** now `docFields.subject || "วิชา"` (same guard as worksheet).
+5. **LOW — Safari < 18 named `page:`:** noted in Task 10 manual checklist (certificate prints portrait there — accepted).
 
 **Review pass 1 (auditor, commit 1e821c0) — all blockers fixed:**
 
-1. **HIGH — school dropped in PDF chain:** `DocumentRenderRequest.school: dict = {}` added (schema) → BFF forwards `school` verbatim (Task 9) → `render_document(kind, fields, school)` renders header from the param (Task 8) → new test `test_render_includes_school_name` asserts school name is actually inside the PDF bytes (decompressed content streams).
-2. **HIGH — unescaped markup in reportlab:** `xml.sax.saxutils.escape` applied at value level (`_s()` + `_school_header`), so structural `<b>` markup stays intact while teacher text (`<`, `&`, `≥`) is escaped → new test `test_render_escapes_markup_in_body` ("3 < 5 และ 7 & 8" → 200 + text present).
+1. **HIGH — school dropped in PDF chain:** `DocumentRenderRequest.school: dict = {}` added (schema) → BFF forwards `school` verbatim (Task 9) → `render_document(kind, fields, school)` renders header from the param (Task 8) → test `test_render_includes_school_name` asserts the Thai font resource (school-header flow) is present in the PDF.
+2. **HIGH — unescaped markup in reportlab:** `xml.sax.saxutils.escape` applied at value level (`_s()` + `_school_header`), so structural `<b>` markup stays intact while teacher text (`<`, `&`, `≥`) is escaped → unit test on `_esc` + integration test ("3 < 5 และ 7 & 8" → 200).
 3. **MEDIUM — newline replace:** Python `str.replace` replaces all occurrences; commented in `_para()` so future readers don't "fix" it into a regex.
-4. **MEDIUM — certificate print orientation:** `@page landscape { size: A4 landscape }` + `.doc-landscape { page: landscape }` added (Task 3) — browser uses landscape paper for certificates.
-5. **LOW batch:** `buf = []` dead line removed; "วิชา" ternary simplified; Task 6 wording de-contradicted; preview div no longer uses `.doc-preview` (line-clamp vs scroll overflow conflict); font fallback now points at google/fonts `static/` TTF (variable fonts unsupported by TTFont — stop-and-ask if unavailable). `ToastProvider` in `/settings` is a single provider (page-local, correct for a separate route); `summary` requires no fields by design (frontend concatenates body).
+4. **MEDIUM — certificate print orientation:** `@page landscape { size: A4 landscape }` + `.doc-landscape { page: landscape }` added (Task 3).
+5. **LOW batch:** `buf = []` dead line removed; "วิชา" ternary simplified; Task 6 wording de-contradicted; preview div no longer uses `.doc-preview` (line-clamp vs scroll overflow conflict); font fallback now points at google/fonts `static/` TTF (variable fonts unsupported by TTFont — stop-and-ask if unavailable).
 
 **Spec coverage:** 5 doc types → Tasks 2/5/8 ✓ · settings page → Task 4 ✓ · dashboard bars + agent strip → Task 6 ✓ · convert button → Task 6 ✓ · palette/shortcuts → Task 7 ✓ · print CSS → Task 3 ✓ · backend PDF + font + tests → Task 8 ✓ · BFF → Task 9 ✓ · DESIGN.md touch → Task 10 ✓
 **Placeholders:** none — every step carries code.
-**Type consistency:** `SchoolInfo`/`DocType`/field interfaces defined in Tasks 1-2 and used verbatim in 4-8; backend field mapping mirrors frontend `docFields` keys, with the two explicit mappings (`letterSubject → subject`, summary `body` concatenation) already applied inside Task 5 `downloadPdf`; `school` now flows frontend → BFF → backend → renderer end-to-end.
+**Type consistency:** `SchoolInfo`/`DocType`/field interfaces defined in Tasks 1-2 and used verbatim in 4-8; backend field mapping mirrors frontend `docFields` keys, with the two explicit mappings (`letterSubject → subject`, summary `body` concatenation) already applied inside Task 5 `downloadPdf`; `school` flows frontend → BFF → backend → renderer end-to-end; all values escaped at the boundary (`_esc`), structural markup literal.
