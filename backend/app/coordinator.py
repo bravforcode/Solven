@@ -125,7 +125,7 @@ def make_coordinator(store: Store, fail_closed: bool = False):
         # update audit row guardrail flag (latest run for this task)
         with store._c() as conn:
             conn.execute(
-                "UPDATE agent_runs SET guardrail_passed=? WHERE task_id=? AND created_at=(SELECT MAX(created_at) FROM agent_runs WHERE task_id=?)",
+                "UPDATE agent_runs SET guardrail_passed=%s WHERE task_id=%s AND created_at=(SELECT MAX(created_at) FROM agent_runs WHERE task_id=%s)",
                 (1 if passed else 0, state["task_id"], state["task_id"]),
             )
         return {**state, "passed": passed, "warnings": warnings}

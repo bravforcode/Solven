@@ -14,11 +14,16 @@ from app.config import Settings
 from app.main import create_app
 
 
-def make_client(**overrides) -> tuple[TestClient, Settings]:
-    # default to an isolated in-memory DB so tests never share backend/data/solven.db
-    overrides.setdefault("db_path", ":memory:")
-    settings = Settings(**overrides)
-    return TestClient(create_app(settings)), settings
+@pytest.fixture()
+def make_client(db_url, store):
+    """App factory bound to the Postgres test DB (defaults overridable)."""
+
+    def _make(**overrides) -> tuple[TestClient, Settings]:
+        overrides.setdefault("database_url", db_url)
+        settings = Settings(**overrides)
+        return TestClient(create_app(settings)), settings
+
+    return _make
 
 
 def auth(token: str) -> dict:
@@ -26,13 +31,13 @@ def auth(token: str) -> dict:
 
 
 # ---------------------------------------------------------------- auth
-def test_health_is_public_no_token():
+def test_health_is_public_no_token(make_client):
     client, _ = make_client()
     r = client.get("/health")
     assert r.status_code == 200
 
 
-def test_api_requires_token():
+def test_api_requires_token(make_client):
     client, settings = make_client()
     r = client.post(
         "/api/coordinator", json={"agent": "grading", "input": "คำตอบ"}
@@ -40,7 +45,7 @@ def test_api_requires_token():
     assert r.status_code == 401
 
 
-def test_api_rejects_wrong_token():
+def test_api_rejects_wrong_token(make_client):
     client, settings = make_client()
     r = client.post(
         "/api/coordinator",
@@ -50,7 +55,7 @@ def test_api_rejects_wrong_token():
     assert r.status_code == 401
 
 
-def test_api_accepts_valid_token():
+def test_api_accepts_valid_token(make_client):
     client, settings = make_client(api_token="test-token")
     r = client.post(
         "/api/coordinator",
@@ -61,7 +66,7 @@ def test_api_accepts_valid_token():
     assert r.json()["status"] == "pending"
 
 
-def test_api_rejects_garbage_auth_scheme():
+def test_api_rejects_garbage_auth_scheme(make_client):
     client, settings = make_client(api_token="test-token")
     r = client.post(
         "/api/coordinator",
@@ -72,7 +77,7 @@ def test_api_rejects_garbage_auth_scheme():
 
 
 # ---------------------------------------------------------------- rate limit
-def test_drafts_pagination_bounded():
+def test_drafts_pagination_bounded(make_client):
     """T2-02: list endpoints paginate with a bounded page size."""
     client, _ = make_client(api_token="test-token")
     for i in range(5):
@@ -90,7 +95,7 @@ def test_drafts_pagination_bounded():
     assert len(r.json()) == 1  # clamped to min 1
 
 
-def test_rate_limit_429_after_limit():
+def test_rate_limit_429_after_limit(make_client):
     client, settings = make_client(rate_limit_per_min=3)
     for _ in range(3):
         r = client.get("/health")
@@ -99,7 +104,7 @@ def test_rate_limit_429_after_limit():
     assert r4.status_code == 429
 
 
-def test_rate_limit_resets_after_window():
+def test_rate_limit_resets_after_window(make_client):
     from app.middleware import _WINDOW_SECONDS
 
     client, settings = make_client(rate_limit_per_min=2)
@@ -114,7 +119,7 @@ def test_rate_limit_resets_after_window():
 
 
 # ---------------------------------------------------------------- security headers
-def test_security_headers_present():
+def test_security_headers_present(make_client):
     client, _ = make_client()
     r = client.get("/health")
     assert r.headers.get("x-content-type-options") == "nosniff"
@@ -124,13 +129,13 @@ def test_security_headers_present():
 
 
 # ---------------------------------------------------------------- request id
-def test_request_id_echoed():
+def test_request_id_echoed(make_client):
     client, _ = make_client()
     r = client.get("/health", headers={"X-Request-ID": "req-123"})
     assert r.headers.get("x-request-id") == "req-123"
 
 
-def test_request_id_generated_when_missing():
+def test_request_id_generated_when_missing(make_client):
     client, _ = make_client()
     r = client.get("/health")
     assert r.headers.get("x-request-id")

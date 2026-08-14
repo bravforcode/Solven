@@ -16,12 +16,12 @@ TOKEN = "test-token"
 
 
 @pytest.fixture()
-def client():
-    """Fresh app (in-memory DB, mock LLM) per test."""
+def client(db_url, store):
+    """Fresh app (Postgres test DB, mock LLM) per test."""
     import os
 
     os.environ["SOLVEN_LLM"] = "mock"
-    app = create_app(Settings(api_token=TOKEN, db_path=":memory:"))
+    app = create_app(Settings(api_token=TOKEN, database_url=db_url))
     return TestClient(app)
 
 
@@ -41,9 +41,9 @@ def test_readyz_ok_when_db_usable(client):
     assert r.json()["status"] == "ready"
 
 
-def test_readyz_fails_when_db_unusable(monkeypatch):
+def test_readyz_fails_when_db_unusable(monkeypatch, db_url):
     """Readiness must prove persistence: a broken store path -> 503, not green."""
-    app = create_app(Settings(api_token=TOKEN, db_path=":memory:"))
+    app = create_app(Settings(api_token=TOKEN, database_url=db_url))
     client = TestClient(app)
 
     def boom():
@@ -54,13 +54,13 @@ def test_readyz_fails_when_db_unusable(monkeypatch):
     assert r.status_code == 503
 
 
-def test_fail_closed_raises_instead_of_mock_fallback(monkeypatch):
+def test_fail_closed_raises_instead_of_mock_fallback(monkeypatch, db_url):
     """Production (fail_closed=True) must never degrade to mock output on provider error."""
     import httpx
 
     from app.coordinator import FailClosedError, run_task
 
-    store = Store(":memory:")
+    store = Store(db_url)
 
     def boom(*args, **kwargs):
         raise httpx.HTTPStatusError("401 Unauthorized", request=httpx.Request("POST", "https://x"), response=httpx.Response(401))
@@ -70,7 +70,7 @@ def test_fail_closed_raises_instead_of_mock_fallback(monkeypatch):
         run_task(store, "grading", "input", fail_closed=True)
 
 
-def test_production_app_returns_502_on_provider_failure(monkeypatch):
+def test_production_app_returns_502_on_provider_failure(monkeypatch, db_url, prod_db_url):
     """API level: production app must surface provider failure as 502, never mock 200."""
     import httpx
 
@@ -78,7 +78,7 @@ def test_production_app_returns_502_on_provider_failure(monkeypatch):
     app = create_app(
         Settings(
             api_token="x" * 40,
-            db_path=":memory:",
+            database_url=prod_db_url,
             env="production",
             llm="anthropic",
             cors_origins=["https://app.example.com"],
@@ -105,13 +105,13 @@ def test_production_app_returns_502_on_provider_failure(monkeypatch):
     assert r.status_code == 502, r.text
 
 
-def test_dev_still_falls_back_to_mock_on_provider_error(monkeypatch):
+def test_dev_still_falls_back_to_mock_on_provider_error(monkeypatch, db_url):
     """Dev (fail_closed=False) keeps the honest fallback-mock path."""
     import httpx
 
     from app.coordinator import run_task
 
-    store = Store(":memory:")
+    store = Store(db_url)
     calls = {"n": 0}
 
     def boom(*args, **kwargs):
@@ -258,7 +258,7 @@ def test_guardrail_flags_pii_in_output():
     assert any("เบอร์โทร" in w for w in warnings)
 
 
-def test_real_provider_policy_failure_quarantines_draft(monkeypatch):
+def test_real_provider_policy_failure_quarantines_draft(monkeypatch, db_url):
     """T1-07: real-provider output failing guardrail twice must be quarantined,
     never returned as an ordinary pending draft."""
     from app.coordinator import run_task
@@ -282,7 +282,7 @@ def test_real_provider_policy_failure_quarantines_draft(monkeypatch):
     fake = _FakeSubAgent()
     monkeypatch.setattr("app.coordinator.run_sub_agent", fake)
 
-    store = Store(":memory:")
+    store = Store(db_url)
     draft = run_task(store, "reporting", "เด็กดี", fail_closed=True, teacher_id="t1")
     assert draft["status"] == "quarantined"
     import json as _json
@@ -290,17 +290,17 @@ def test_real_provider_policy_failure_quarantines_draft(monkeypatch):
     assert any("เบอร์โทร" in w for w in _json.loads(draft["warnings"]))
 
 
-def test_mock_engine_guardrail_warning_keeps_pending():
+def test_mock_engine_guardrail_warning_keeps_pending(db_url):
     """The demo mock is exempt from quarantine (explicit demo-only output)."""
     from app.coordinator import run_task
     from app.db import Store
 
-    store = Store(":memory:")
+    store = Store(db_url)
     draft = run_task(store, "grading", "x", rubric="เกณฑ์", teacher_id="t1")
     assert draft["status"] == "pending"
 
 
-def test_grading_missing_score_flagged_and_quarantined(monkeypatch):
+def test_grading_missing_score_flagged_and_quarantined(monkeypatch, db_url):
     """T1-08: grading output without a score pattern is a policy failure."""
     from app.coordinator import run_task
     from app.db import Store
@@ -312,7 +312,7 @@ def test_grading_missing_score_flagged_and_quarantined(monkeypatch):
         return "ข้อความไม่มีตัวเลขคะแนนเลย แต่มีคำว่า ร่าง ตรวจทาน"
 
     monkeypatch.setattr("app.coordinator.run_sub_agent", no_score)
-    store = Store(":memory:")
+    store = Store(db_url)
     draft = run_task(store, "grading", "x", rubric="เกณฑ์", fail_closed=True, teacher_id="t1")
     assert draft["status"] == "quarantined"
     import json as _json

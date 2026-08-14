@@ -41,14 +41,14 @@ def test_redact_marks_placeholders():
     assert "[PHONE]" in out
 
 
-def test_provider_call_receives_redacted_input(monkeypatch):
+def test_provider_call_receives_redacted_input(monkeypatch, db_url):
     """Real-provider path must receive redacted text; mock path keeps originals."""
     monkeypatch.setenv("SOLVEN_LLM", "anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     capture = _Capture()
     monkeypatch.setattr("app.coordinator.run_sub_agent", capture)
 
-    store = Store(":memory:")
+    store = Store(db_url)
     from app.coordinator import run_task
 
     run_task(store, "grading", "คำตอบ: โทร 0812345678", rubric="เกณฑ์", fail_closed=True)
@@ -60,6 +60,6 @@ def test_provider_call_receives_redacted_input(monkeypatch):
     monkeypatch.setenv("SOLVEN_LLM", "mock")
     capture2 = _Capture()
     monkeypatch.setattr("app.coordinator.run_sub_agent", capture2)
-    run_task(Store(":memory:"), "grading", "คำตอบ: โทร 0812345678", rubric="เกณฑ์")
+    run_task(Store(db_url), "grading", "คำตอบ: โทร 0812345678", rubric="เกณฑ์")
     agent, provider_input, provider_rubric = capture2.args
     assert "0812345678" in provider_input

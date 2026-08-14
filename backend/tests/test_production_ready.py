@@ -1,7 +1,6 @@
-"""Tests: backend production-readiness batch — WAL/busy_timeout, migrate CLI,
+"""Tests: backend production-readiness batch — Postgres readiness, migrate CLI,
 orphan purge, docs hidden in prod, request-id validation."""
 
-import sqlite3
 import uuid
 
 from fastapi.testclient import TestClient
@@ -11,12 +10,12 @@ from app.db import Store
 from app.main import create_app
 
 
-def _prod_app(monkeypatch):
+def _prod_app(monkeypatch, db_url, store, prod_db_url):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     return create_app(
         Settings(
             api_token="x" * 40,
-            db_path=":memory:",
+            database_url=prod_db_url,
             env="production",
             llm="anthropic",
             cors_origins=["https://app.example.com"],
@@ -28,60 +27,49 @@ def _auth(token: str = "x" * 40) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-# ---- T2-04: SQLite WAL + busy_timeout ----
-def test_file_db_uses_wal_and_busy_timeout(tmp_path):
-    store = Store(tmp_path / "solven.db")
+# ---- Postgres readiness ----
+def test_readyz_ok_and_migrations_applied(db_url):
+    """PG-relevant readiness: /readyz 200 and schema_migrations populated."""
+    store = Store(db_url)
     with store._c() as conn:
-        assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
-        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+        migrated = {r["name"] for r in conn.execute("SELECT name FROM schema_migrations")}
+    assert migrated, "migrations must be applied"
+    assert any(name.startswith("00") for name in migrated)
 
 
-def test_memory_db_keeps_working():
-    store = Store(":memory:")
+def test_store_keeps_working(db_url, store):
     store.add_draft("d1", "t1", "lesson-plan", "in", "out")
     assert store.get_draft("d1") is not None
 
 
 # ---- DEV-06: migrate CLI ----
-def test_migrate_cli_accepts_db_flag(tmp_path, capsys):
+def test_migrate_cli_accepts_db_flag(db_url, capsys):
     from app.migrate import main
 
-    db_file = tmp_path / "cli" / "solven.db"
-    rc = main(["--db", str(db_file)])
+    rc = main(["--db", db_url])
     out = capsys.readouterr().out
     assert rc == 0
-    assert db_file.exists()
     assert "migrations applied" in out
     # second run is idempotent
-    rc2 = main(["--db", str(db_file)])
+    rc2 = main(["--db", db_url])
     assert rc2 == 0
 
 
-def test_migrate_cli_legacy_positional_still_works(tmp_path):
+def test_migrate_cli_legacy_positional_still_works(db_url):
     from app.migrate import main
 
-    db_file = tmp_path / "legacy.db"
-    assert main([str(db_file)]) == 0
-    assert db_file.exists()
-
-
-def test_migrate_cli_memory(tmp_path, capsys):
-    from app.migrate import main
-
-    assert main(["--db", ":memory:"]) == 0
-    assert "migrations applied" in capsys.readouterr().out
+    assert main([db_url]) == 0
 
 
 # ---- T1-09: orphan purge ----
-def test_purge_removes_crash_orphaned_tasks(tmp_path):
+def test_purge_removes_crash_orphaned_tasks(db_url, store):
     import datetime
 
-    store = Store(tmp_path / "solven.db")
     store.create_task("orphan-old", "lesson-plan", "x", teacher_id="t1")
     store.create_task("orphan-fresh", "lesson-plan", "x", teacher_id="t1")
     old = datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc).isoformat()
     with store._c() as conn:
-        conn.execute("UPDATE tasks SET created_at=? WHERE id='orphan-old'", (old,))
+        conn.execute("UPDATE tasks SET created_at=%s WHERE id='orphan-old'", (old,))
 
     store.purge_expired(retention_days=180)
     assert store.get_task("orphan-old") is None
@@ -89,33 +77,33 @@ def test_purge_removes_crash_orphaned_tasks(tmp_path):
 
 
 # ---- SEC-L-02: docs hidden in production ----
-def test_docs_hidden_in_production(monkeypatch):
-    client = TestClient(_prod_app(monkeypatch))
+def test_docs_hidden_in_production(monkeypatch, db_url, store, prod_db_url):
+    client = TestClient(_prod_app(monkeypatch, db_url, store, prod_db_url))
     assert client.get("/docs").status_code == 404
     assert client.get("/redoc").status_code == 404
     assert client.get("/openapi.json").status_code == 404
 
 
-def test_docs_visible_in_dev():
+def test_docs_visible_in_dev(db_url):
     client = TestClient(
-        create_app(Settings(api_token="test-token", db_path=":memory:", env="dev"))
+        create_app(Settings(api_token="test-token", database_url=db_url, env="dev"))
     )
     assert client.get("/docs").status_code == 200
 
 
 # ---- SEC-L-01: request-id validation ----
-def test_request_id_valid_echoed():
+def test_request_id_valid_echoed(db_url):
     client = TestClient(
-        create_app(Settings(api_token="test-token", db_path=":memory:", env="dev"))
+        create_app(Settings(api_token="test-token", database_url=db_url, env="dev"))
     )
     rid = "abc-123_XYZ"
     r = client.get("/health", headers={"x-request-id": rid})
     assert r.headers.get("x-request-id") == rid
 
 
-def test_request_id_invalid_replaced():
+def test_request_id_invalid_replaced(db_url):
     client = TestClient(
-        create_app(Settings(api_token="test-token", db_path=":memory:", env="dev"))
+        create_app(Settings(api_token="test-token", database_url=db_url, env="dev"))
     )
     evil = "injection\n" + "A" * 200
     r = client.get("/health", headers={"x-request-id": evil})

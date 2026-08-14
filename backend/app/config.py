@@ -61,8 +61,8 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode, BeforeValidator(_split_origins)] = [
         "http://localhost:3000"
     ]
-    # empty -> backend/data/solven.db ; ":memory:" for tests
-    db_path: str = ""
+    # Postgres DSN (SOLVEN_DATABASE_URL); empty -> postgresql://solven:solven@localhost:5432/solven
+    database_url: str = ""
     # Data retention (days) for drafts/tasks/runs — PDPA lifecycle (AUD-H-09).
     # Purge runs at startup; synthetic policy assumed 180 days until the owner
     # confirms the legal retention period.
@@ -119,6 +119,8 @@ class Settings(BaseSettings):
             os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
         ):
             problems.append("production SOLVEN_LLM=auto requires at least one provider key")
+        if not self.database_url or "localhost" in self.database_url or "127.0.0.1" in self.database_url:
+            problems.append("production requires SOLVEN_DATABASE_URL pointing to a non-localhost Postgres")
         if problems:
             raise ValueError("; ".join(problems))
         return self

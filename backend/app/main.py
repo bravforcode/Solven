@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.coordinator import FailClosedError, InFlightError, TaskNotOwnedError, run_task
-from app.db import DB_PATH, Store
+from app.db import DB_URL_DEFAULT, Store
 from app.seed import seed_demo
 from app.middleware import (
     RateLimitMiddleware,
@@ -22,8 +22,9 @@ from app.middleware import (
     SecurityHeadersMiddleware,
 )
 from app.migrate import apply_migrations
-from app.schema import DraftOut, PatchDraft, RunRecord, TaskRequest
+from app.schema import DraftOut, PatchDraft, RunRecord, TaskRequest, DocumentRenderRequest
 from app.security import auth_dependency
+from app.documents import render_document
 
 class JsonFormatter(logging.Formatter):
     """One JSON object per line (T2-09 / AUD-M-12): request context fields are
@@ -59,20 +60,6 @@ if not _root.handlers:
 VALID_AGENTS = {"grading", "lesson-plan", "reporting"}
 
 
-def _resolve_db_path(db_path: str) -> Optional[Path]:
-    """Normalize the configured DB path to one value used everywhere.
-
-    Preserves the ':memory:' magic string for tests; returns None when unset or
-    blank (Store then falls back to its default file path). Whitespace-only
-    values are treated as unset so a stray env value cannot create a file.
-    """
-    if not db_path or not db_path.strip():
-        return None
-    if db_path.strip() == ":memory:":
-        return db_path.strip()  # type: ignore[return-value]  # magic string handled by Store
-    return Path(db_path.strip())
-
-
 class _Principal(TypedDict):
     teacher_id: str
     tenant: Optional[str]
@@ -102,16 +89,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     # Keep the LLM-mode config and the runtime provider selection in sync:
     # app/llm.py reads SOLVEN_LLM from the environment directly.
     os.environ.setdefault("SOLVEN_LLM", settings.llm)
-    db_path = _resolve_db_path(settings.db_path) or DB_PATH
-    store = Store(db_path)
-
-    # apply schema migrations on startup (file-backed DBs only)
-    if db_path != ":memory:":
-        import sqlite3
-
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(db_path, check_same_thread=False) as conn:
-            apply_migrations(conn)
+    database_url = settings.database_url or DB_URL_DEFAULT
+    store = Store(database_url)
+    with store._c() as conn:
+        apply_migrations(conn)
 
     # PDPA lifecycle (T1-09): purge expired drafts on startup
     try:
@@ -265,6 +246,24 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         else:
             runs = store.list_runs(task_id, limit=limit, offset=offset)
         return [RunRecord(**r) for r in runs]
+
+    @app.post("/api/documents/render", dependencies=[require_token], tags=["api"])
+    def render_doc(body: DocumentRenderRequest):
+        from fastapi.responses import Response
+
+        try:
+            pdf = render_document(body.kind, body.fields, body.school)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 - PDF failure is a 500 with reason
+            raise HTTPException(500, f"pdf render failed: {exc}") from exc
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="solven-document.pdf"'},
+        )
 
     return app
 

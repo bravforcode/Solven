@@ -106,22 +106,35 @@ def seed_demo(store: Store, teacher_id: str = "demo-teacher") -> int:
             created = _now(days_ago=age_days)
             reviewed_at = _now(days_ago=age_days) if status in ("approved", "rejected") else None
             conn.execute(
-                "INSERT OR REPLACE INTO tasks (id, teacher_id, agent, input, state, created_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO tasks (id, teacher_id, agent, input, state, created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (id) DO UPDATE SET teacher_id=EXCLUDED.teacher_id, "
+                "agent=EXCLUDED.agent, input=EXCLUDED.input, state=EXCLUDED.state, "
+                "created_at=EXCLUDED.created_at",
                 (task_id, teacher_id, agent, input_text, "draft_ready", created),
             )
             conn.execute(
-                "INSERT OR REPLACE INTO drafts "
+                "INSERT INTO drafts "
                 "(id, task_id, teacher_id, agent, input, output, status, warnings, reviewed_by, reviewed_at, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (id) DO UPDATE SET task_id=EXCLUDED.task_id, "
+                "teacher_id=EXCLUDED.teacher_id, agent=EXCLUDED.agent, input=EXCLUDED.input, "
+                "output=EXCLUDED.output, status=EXCLUDED.status, warnings=EXCLUDED.warnings, "
+                "reviewed_by=EXCLUDED.reviewed_by, reviewed_at=EXCLUDED.reviewed_at, "
+                "created_at=EXCLUDED.created_at",
                 (draft_id, task_id, teacher_id, agent, input_text, output, status,
                  json.dumps(warnings, ensure_ascii=False),
                  reviewed_by, reviewed_at, created),
             )
             conn.execute(
-                "INSERT OR REPLACE INTO agent_runs "
+                "INSERT INTO agent_runs "
                 "(id, task_id, agent, model, prompt_hash, output_hash, status, latency_ms, cost_estimate, guardrail_passed, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (id) DO UPDATE SET task_id=EXCLUDED.task_id, "
+                "agent=EXCLUDED.agent, model=EXCLUDED.model, prompt_hash=EXCLUDED.prompt_hash, "
+                "output_hash=EXCLUDED.output_hash, status=EXCLUDED.status, "
+                "latency_ms=EXCLUDED.latency_ms, cost_estimate=EXCLUDED.cost_estimate, "
+                "guardrail_passed=EXCLUDED.guardrail_passed, created_at=EXCLUDED.created_at",
                 (f"demo-run-{idx + 1:03d}", task_id, agent, "mock-deterministic-v1",
                  _hash(input_text), _hash(output), "completed",
                  320 + idx * 7, 0.0, guardrail_passed, created),

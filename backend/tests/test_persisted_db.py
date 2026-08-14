@@ -1,62 +1,47 @@
-"""Regression tests: file-backed SQLite DB works end-to-end (AUD-C-01, AUD-M-03, DEV-02).
+"""Regression tests: Postgres-backed store works end-to-end (AUD-C-01, AUD-M-03, DEV-02).
 
-Store must accept a real Path (not a str) and app startup must migrate + serve
-the same file. `:memory:` mode is covered by the existing suite and must be
-untouched.
+Store must accept a database_url and app startup must migrate + serve the same
+Postgres database. Default-URL resolution (Store(database_url="")) is covered
+here too.
 """
 
-import sqlite3
-from pathlib import Path
+import psycopg
+from psycopg.rows import dict_row
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.main import _resolve_db_path, create_app
+from app.db import DB_URL_DEFAULT, Store
+from app.main import create_app
 
 TOKEN = "test-token"
 
 
-def _make_app(db_path: str, monkeypatch):
+def _make_app(database_url: str, monkeypatch):
     monkeypatch.setenv("SOLVEN_LLM", "mock")
-    return create_app(Settings(api_token=TOKEN, db_path=db_path))
+    return create_app(Settings(api_token=TOKEN, database_url=database_url))
 
 
 def _auth() -> dict:
     return {"Authorization": f"Bearer {TOKEN}"}
 
 
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("", None),
-        ("   ", None),
-        (":memory:", ":memory:"),
-        ("  :memory:  ", ":memory:"),
-        ("/data/solven.db", Path("/data/solven.db")),
-    ],
-)
-def test_resolve_db_path_normalizes(raw, expected):
-    assert _resolve_db_path(raw) == expected
+def test_store_default_url_resolves_to_db_url_default():
+    """Store(database_url="") must fall back to DB_URL_DEFAULT (not crash)."""
+    store = Store()
+    assert store._database_url == DB_URL_DEFAULT
 
 
-def test_store_accepts_path(tmp_path):
-    """AC-1: Store(Path(...))._c() works for a file-backed DB."""
-    from app.db import Store
-
-    store = Store(tmp_path / "solven.db")
+def test_store_accepts_url(db_url, store):
+    """AC-1: Store(database_url)._c() works against Postgres."""
     store.add_draft("d1", "t1", "grading", "in", "out")
     assert store.get_draft("d1")["status"] == "pending"
 
 
-def test_file_backed_db_end_to_end(tmp_path, monkeypatch):
-    """Regression: configured file DB works via TestClient (create/list/patch/audit).
-
-    Fails on old code — create_app passes a str to Store, and Store._conn calls
-    path.parent.mkdir on the str -> AttributeError -> 500.
-    """
-    db_file = tmp_path / "data" / "solven.db"  # nested parent: forces mkdir in _conn
-    client = TestClient(_make_app(str(db_file), monkeypatch))
+def test_postgres_backed_db_end_to_end(db_url, store, monkeypatch):
+    """Regression: configured Postgres DB works via TestClient (create/list/patch/audit)."""
+    client = TestClient(_make_app(db_url, monkeypatch))
 
     # create draft
     r = client.post(
@@ -85,10 +70,9 @@ def test_file_backed_db_end_to_end(tmp_path, monkeypatch):
     runs = r.json()
     assert any(run["task_id"] for run in runs)
 
-    # data is truly persisted on disk (fresh connection sees it)
-    assert db_file.exists()
-    with sqlite3.connect(db_file) as conn:
-        row = conn.execute("SELECT status FROM drafts WHERE id=?", (d["id"],)).fetchone()
-        assert row[0] == "approved"
-        migrated = {r[0] for r in conn.execute("SELECT name FROM schema_migrations")}
-        assert migrated, "migrations must run on the same file-backed path"
+    # data is truly persisted (fresh connection sees it)
+    with psycopg.connect(db_url, row_factory=dict_row) as conn:
+        row = conn.execute("SELECT status FROM drafts WHERE id=%s", (d["id"],)).fetchone()
+        assert row["status"] == "approved"
+        migrated = {r["name"] for r in conn.execute("SELECT name FROM schema_migrations")}
+        assert migrated, "migrations must run on the same Postgres path"
