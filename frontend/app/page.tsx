@@ -985,6 +985,9 @@ export default function Home() {
           <span className="kbd-hint">
             <kbd>⌘K</kbd> คำสั่งลัด
           </span>
+          <Link href="/settings" className="sidebar-link">
+            ตั้งค่าโรงเรียน
+          </Link>
           <Link href="/about" className="sidebar-link">
             เกี่ยวกับโปรเจกต์
           </Link>
