@@ -6,19 +6,19 @@ from app.config import Settings
 from app.main import create_app
 
 
-def _dev_client():
+def _dev_client(db_url, store):
     return TestClient(
-        create_app(Settings(api_token="test-token", db_path=":memory:", env="dev"))
+        create_app(Settings(api_token="test-token", database_url=db_url, env="dev"))
     )
 
 
-def _prod_client(monkeypatch):
+def _prod_client(monkeypatch, db_url, store, prod_db_url):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     return TestClient(
         create_app(
             Settings(
                 api_token="x" * 40,
-                db_path=":memory:",
+                database_url=prod_db_url,
                 env="production",
                 llm="anthropic",
                 cors_origins=["https://app.example.com"],
@@ -31,8 +31,8 @@ def _auth(token: str = "test-token") -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_demo_seed_creates_full_dataset():
-    client = _dev_client()
+def test_demo_seed_creates_full_dataset(db_url, store):
+    client = _dev_client(db_url, store)
     r = client.post("/api/demo/seed", headers=_auth())
     assert r.status_code == 200
     body = r.json()
@@ -54,16 +54,16 @@ def test_demo_seed_creates_full_dataset():
     assert approved and all(d.get("reviewedBy") for d in approved)
 
 
-def test_demo_seed_populates_audit_trail():
-    client = _dev_client()
+def test_demo_seed_populates_audit_trail(db_url, store):
+    client = _dev_client(db_url, store)
     client.post("/api/demo/seed", headers=_auth())
     runs = client.get("/api/audit", headers=_auth()).json()
     assert len(runs) >= 8
     assert all(r["status"] in ("completed", "fallback-mock") for r in runs)
 
 
-def test_demo_seed_is_404_in_production(monkeypatch):
-    client = _prod_client(monkeypatch)
+def test_demo_seed_is_404_in_production(monkeypatch, db_url, store, prod_db_url):
+    client = _prod_client(monkeypatch, db_url, store, prod_db_url)
     r = client.post(
         "/api/demo/seed",
         headers={"Authorization": f"Bearer {'x' * 40}", "x-solven-principal": "teacher-a"},
@@ -71,7 +71,7 @@ def test_demo_seed_is_404_in_production(monkeypatch):
     assert r.status_code == 404
 
 
-def test_demo_seed_requires_token():
-    client = _dev_client()
+def test_demo_seed_requires_token(db_url, store):
+    client = _dev_client(db_url, store)
     r = client.post("/api/demo/seed")
     assert r.status_code == 401

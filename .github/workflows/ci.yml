@@ -12,6 +12,20 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: solven
+          POSTGRES_PASSWORD: solven
+          POSTGRES_DB: solven_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U solven -d solven_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,6 +37,7 @@ jobs:
       - name: Run tests
         env:
           SOLVEN_LLM: mock
+          SOLVEN_TEST_DATABASE_URL: postgresql://solven:solven@localhost:5432/solven_test
         run: python -m pytest tests -q
 
   frontend:

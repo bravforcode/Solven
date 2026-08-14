@@ -60,6 +60,7 @@ def test_prod_accepts_strong_token(monkeypatch):
         api_token="x" * 40,
         cors_origins=["https://app.example.com"],
         llm="auto",
+        database_url="postgresql://solven:solven@db.internal:5432/solven",
     )
     assert s.api_token == "x" * 40
 
@@ -71,6 +72,7 @@ def test_prod_accepts_exactly_32_char_token(monkeypatch):
         api_token="a" * 32,
         cors_origins=["https://app.example.com"],
         llm="auto",
+        database_url="postgresql://solven:solven@db.internal:5432/solven",
     )
     assert s.api_token == "a" * 32
 
@@ -85,9 +87,11 @@ def test_prod_requires_provider_key_for_non_mock_llm(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(Exception):
-        Settings(env="production", api_token="x" * 40, llm="anthropic")
+        Settings(env="production", api_token="x" * 40, llm="anthropic",
+                 database_url="postgresql://solven:solven@db.internal:5432/solven")
     with pytest.raises(Exception):
-        Settings(env="production", api_token="x" * 40, llm="auto")
+        Settings(env="production", api_token="x" * 40, llm="auto",
+                 database_url="postgresql://solven:solven@db.internal:5432/solven")
 
 
 def test_prod_accepts_llm_when_provider_key_present(monkeypatch):
@@ -97,20 +101,24 @@ def test_prod_accepts_llm_when_provider_key_present(monkeypatch):
         api_token="x" * 40,
         cors_origins=["https://app.example.com"],
         llm="openai",
+        database_url="postgresql://solven:solven@db.internal:5432/solven",
     )
     assert s.llm == "openai"
 
 
 def test_prod_rejects_localhost_cors():
     with pytest.raises(Exception):
-        Settings(env="production", api_token="x" * 40, cors_origins=["http://localhost:3000"])
+        Settings(env="production", api_token="x" * 40, cors_origins=["http://localhost:3000"],
+                 database_url="postgresql://solven:solven@db.internal:5432/solven")
     with pytest.raises(Exception):
-        Settings(env="production", api_token="x" * 40, cors_origins=["http://127.0.0.1:3000"])
+        Settings(env="production", api_token="x" * 40, cors_origins=["http://127.0.0.1:3000"],
+                 database_url="postgresql://solven:solven@db.internal:5432/solven")
 
 
 def test_prod_rejects_mock_llm():
     with pytest.raises(Exception):
-        Settings(env="production", api_token="x" * 40, llm="mock")
+        Settings(env="production", api_token="x" * 40, llm="mock",
+                 database_url="postgresql://solven:solven@db.internal:5432/solven")
 
 
 def test_prod_rejects_mixed_cors_list_with_localhost(monkeypatch):
@@ -121,6 +129,7 @@ def test_prod_rejects_mixed_cors_list_with_localhost(monkeypatch):
             api_token="x" * 40,
             cors_origins=["https://app.example.com", "http://localhost:3000"],
             llm="auto",
+            database_url="postgresql://solven:solven@db.internal:5432/solven",
         )
 
 
@@ -132,6 +141,7 @@ def test_prod_rejects_llm_not_in_approved_list(monkeypatch):
             api_token="x" * 40,
             cors_origins=["https://app.example.com"],
             llm="mystery-provider",
+            database_url="postgresql://solven:solven@db.internal:5432/solven",
         )
 
 
@@ -143,8 +153,23 @@ def test_prod_accepts_llm_in_approved_list(monkeypatch):
         cors_origins=["https://app.example.com"],
         llm="anthropic",
         approved_llm_providers=["anthropic"],
+        database_url="postgresql://solven:solven@db.internal:5432/solven",
     )
     assert s.llm == "anthropic"
+
+
+def test_prod_rejects_localhost_database_url():
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, llm="mock",
+                 database_url="postgresql://solven:solven@localhost:5432/solven")
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, llm="mock",
+                 database_url="postgresql://solven:solven@127.0.0.1:5432/solven")
+
+
+def test_prod_rejects_missing_database_url():
+    with pytest.raises(Exception):
+        Settings(env="production", api_token="x" * 40, llm="mock")
 
 
 def test_invalid_env_rejected():

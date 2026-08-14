@@ -6,7 +6,13 @@ from app.preflight import check
 
 def test_check_passes_for_good_values(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    s = Settings(env="dev", api_token="x" * 40, cors_origins=["https://app.example.com"], llm="auto")
+    s = Settings(
+        env="dev",
+        api_token="x" * 40,
+        cors_origins=["https://app.example.com"],
+        llm="auto",
+        database_url="postgresql://solven:solven@db.internal:5432/solven",
+    )
     assert check(s, site_url="https://app.example.com") == []
 
 

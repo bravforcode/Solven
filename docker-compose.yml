@@ -1,14 +1,29 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=solven
+      - POSTGRES_PASSWORD=solven
+      - POSTGRES_DB=solven
+    volumes:
+      - solven-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solven -d solven"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       - SOLVEN_API_TOKEN=${SOLVEN_API_TOKEN:?SOLVEN_API_TOKEN is required}
       - SOLVEN_ENV=${SOLVEN_ENV:-dev}
-      - SOLVEN_DB_PATH=/data/solven.db
+      - SOLVEN_DATABASE_URL=postgresql://solven:solven@db:5432/solven
       - SOLVEN_CORS_ORIGINS=http://localhost:3000
       - SOLVEN_LLM=mock
-    volumes:
-      - solven-data:/data
     ports:
       - "8000:8000"
     healthcheck:
@@ -33,4 +48,4 @@ services:
       - "3000:3000"
 
 volumes:
-  solven-data:
+  solven-db:
