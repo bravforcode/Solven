@@ -73,6 +73,9 @@ export function useMediaQuery(query: string): boolean {
 export interface ShortcutHandlers {
   goCreate?: () => void;
   goQueue?: () => void;
+  goDocs?: () => void;
+  goSettings?: () => void;
+  printCurrent?: () => void;
   focusSearch?: () => void;
   focusAnswers?: () => void;
   openPalette?: () => void;
@@ -116,6 +119,12 @@ export function useShortcuts(handlers: ShortcutHandlers, enabled = true) {
         ref.current.focusSearch?.();
       } else if (e.key.toLowerCase() === "c") {
         ref.current.focusAnswers?.();
+      } else if (e.key.toLowerCase() === "g") {
+        ref.current.goDocs?.();
+      } else if (e.key.toLowerCase() === "s") {
+        ref.current.goSettings?.();
+      } else if (e.key.toLowerCase() === "p") {
+        ref.current.printCurrent?.();
       }
     };
     window.addEventListener("keydown", onKey);
