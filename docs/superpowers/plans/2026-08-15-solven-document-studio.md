@@ -612,6 +612,20 @@ git commit -m "feat(docs): document HTML builders (lib/documents.ts)"
   line-height: 1.8;
 }
 
+/* REVIEW FIX 4: page orientation must follow the document, or certificates
+   print clipped in portrait. `page: landscape` applies the named @page rule. */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+@page landscape {
+  size: A4 landscape;
+  margin: 0;
+}
+.doc-landscape {
+  page: landscape;
+}
+
 @media print {
   body {
     background: #fff !important;
@@ -853,7 +867,7 @@ function applyDocSource(id: string) {
   if (!d) return;
   setDocSourceId(id);
   if (docType === "worksheet") {
-    setDoc("subject", d.agent === "grading" ? "การบ้าน/แบบฝึกหัด" : "วิชา");
+    setDoc("subject", docFields.subject || "วิชา");
     setDoc("body", d.output);
   } else if (docType === "lesson-record") {
     setDoc("subject", "วิชา");
@@ -1113,8 +1127,16 @@ Inside `<main className="content view-in" key={view}>`, add the third branch:
     <div className="panel panel-pad">
       <h2 className="section-title">ตัวอย่างเอกสาร</h2>
       <div
-        className="doc-preview"
-        style={{ whiteSpace: "pre-wrap", fontFamily: "var(--font)", background: "var(--surface-2)", borderRadius: 8, padding: 12, maxHeight: 220, overflow: "auto" }}
+        className="panel"
+        style={{
+          whiteSpace: "pre-wrap",
+          fontFamily: "var(--font)",
+          background: "var(--surface-2)",
+          borderRadius: 8,
+          padding: 12,
+          maxHeight: 220,
+          overflow: "auto",
+        }}
       >
         {docHtml.replace(/<[^>]+>/g, "").slice(0, 400)}
       </div>
@@ -1276,7 +1298,7 @@ Above the existing `.chip-row` status filter in the queue view, add:
 
 - [ ] **Step 3: "ทำเป็นเอกสาร" button on approved drafts**
 
-In `draftActions`, inside the `d.status === "pending"` block **after** it (i.e., always rendered), add before the copy button:
+In `draftActions`, add this **after** the `d.status === "pending"` block (so it renders only for approved drafts), before the copy button:
 
 ```tsx
 {d.status === "approved" && (
@@ -1440,7 +1462,7 @@ git commit -m "feat(ux): palette commands + shortcuts for docs/settings/print"
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks (standalone service); pydantic v2 patterns from `backend/app/schema.py`
-- Produces: `render_document(kind: str, fields: dict) -> bytes`; route `POST /api/documents/render` (auth via existing `require_token` dep) returning `application/pdf`; 400 bad kind / missing fields; 503 when reportlab missing — consumed by BFF Task 9
+- Produces: `render_document(kind: str, fields: dict, school: dict | None = None) -> bytes`; route `POST /api/documents/render` (auth via existing `require_token` dep) returning `application/pdf`; 400 bad kind / missing fields; 503 when reportlab missing — consumed by BFF Task 9
 
 - [ ] **Step 1: Install + pin reportlab**
 
@@ -1457,12 +1479,17 @@ mkdir -p backend/app/static/fonts
 Invoke-WebRequest -Uri "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSansThai/NotoSansThai-Regular.ttf" -OutFile "backend/app/static/fonts/NotoSansThai-Regular.ttf"
 ```
 
-Verify: file exists and size > 100 KB. (Fallback URL if the raw link 404s: `https://github.com/google/fonts/raw/main/ofl/notosansthai/NotoSansThai%5Bwdth,wght%5D.ttf` — but prefer the static hinted TTF; if only the variable font is reachable, register it the same way.)
+Verify: file exists and size > 100 KB. Fallback if the raw link 404s (variable-font risk: reportlab's TTFont does NOT support variable fonts, so always prefer a static TTF):
+1. `https://github.com/google/fonts/raw/main/ofl/notosansthai/static/NotoSansThai-Regular.ttf` (google/fonts keeps a `static/` folder alongside variable fonts)
+2. If both fail, stop and ask — do NOT commit a variable font or a non-Thai font.
 
 - [ ] **Step 3: Write the failing test — `backend/tests/test_documents.py`**
 
 ```python
 """Tests: /api/documents/render — PDF generation (reportlab, Thai font)."""
+
+import re
+import zlib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1471,6 +1498,18 @@ from app.config import Settings
 from app.main import create_app
 
 TOKEN = "test-token"
+
+
+def pdf_contains(content: bytes, needle: str) -> bool:
+    """Search rendered PDF text (decompressing content streams)."""
+    text = b""
+    for m in re.finditer(rb"stream\r?\n(.*?)endstream", content, re.S):
+        chunk = m.group(1)
+        try:
+            text += zlib.decompress(chunk)
+        except Exception:
+            text += chunk
+    return needle.encode("utf-8") in text
 
 
 @pytest.fixture()
@@ -1517,6 +1556,35 @@ def test_render_certificate_landscape(client):
     assert r.content.startswith(b"%PDF")
 
 
+def test_render_includes_school_name(client):
+    """REVIEW FIX 1: school must reach the PDF, not vanish in the BFF chain."""
+    r = client.post(
+        "/api/documents/render",
+        headers=auth(),
+        json={
+            "kind": "worksheet",
+            "school": {"schoolName": "โรงเรียนบ้านสวนฝั่งสุข", "address": "12 หมู่ 3", "district": "สพป."},
+            "fields": {"subject": "คณิต", "grade": "ป.5", "body": "โจทย์"},
+        },
+    )
+    assert r.status_code == 200
+    assert pdf_contains(r.content, "โรงเรียนบ้านสวนฝั่งสุข")
+
+
+def test_render_escapes_markup_in_body(client):
+    """REVIEW FIX 2: teacher text with `<`, `&` must not break Paragraph."""
+    r = client.post(
+        "/api/documents/render",
+        headers=auth(),
+        json={
+            "kind": "worksheet",
+            "fields": {"subject": "คณิต", "grade": "ป.5", "body": "3 < 5 และ 7 & 8 ≥ 10"},
+        },
+    )
+    assert r.status_code == 200
+    assert pdf_contains(r.content, "3 < 5")
+
+
 def test_render_unknown_kind_400(client):
     r = client.post(
         "/api/documents/render",
@@ -1557,6 +1625,7 @@ hides the download button — never a hard failure.
 
 import logging
 from pathlib import Path
+from xml.sax.saxutils import escape as _esc
 
 _FONT_DIR = Path(__file__).parent / "static" / "fonts"
 _FONT_PATH = _FONT_DIR / "NotoSansThai-Regular.ttf"
@@ -1589,7 +1658,7 @@ _REQUIRED: dict[str, set[str]] = {
 }
 
 
-def render_document(kind: str, fields: dict) -> bytes:
+def render_document(kind: str, fields: dict, school: dict | None = None) -> bytes:
     """Render one document to PDF bytes. Raises ValueError on invalid input,
     RuntimeError when reportlab is unavailable."""
     if not _AVAILABLE:
@@ -1599,17 +1668,21 @@ def render_document(kind: str, fields: dict) -> bytes:
     missing = _REQUIRED[kind] - set(fields or {})
     if missing:
         raise ValueError(f"missing fields: {sorted(missing)}")
+    school = school or {}
 
     def _s(key: str, default: str = "") -> str:
-        return str(fields.get(key) or default)
+        # escape before it ever reaches Paragraph markup (REVIEW FIX 2):
+        # raw `<`, `&`, `>` from teacher text would break reportlab parsing
+        return _esc(str(fields.get(key) or default))
 
-    buf = []
     from io import BytesIO
 
     bio = BytesIO()
 
     def _para(text: str, style: ParagraphStyle) -> Paragraph:
-        return Paragraph((text or "").replace("\n", "<br/>"), style)
+        # Python str.replace replaces ALL occurrences (REVIEW FIX 3) —
+        # newlines → <br/> across the whole text
+        return Paragraph(text.replace("\n", "<br/>"), style)
 
     styles = {
         "head": ParagraphStyle("head", fontName="NotoSansThai", fontSize=15, leading=20, alignment=1),
@@ -1621,9 +1694,9 @@ def render_document(kind: str, fields: dict) -> bytes:
     }
 
     def _school_header(flow, school: dict):
-        flow.append(_para(str(school.get("schoolName") or "โรงเรียน"), styles["head"]))
-        flow.append(_para(str(school.get("address") or ""), styles["sub"]))
-        flow.append(_para(str(school.get("district") or ""), styles["sub"]))
+        flow.append(_para(_esc(str(school.get("schoolName") or "โรงเรียน")), styles["head"]))
+        flow.append(_para(_esc(str(school.get("address") or "")), styles["sub"]))
+        flow.append(_para(_esc(str(school.get("district") or "")), styles["sub"]))
         flow.append(Spacer(1, 4 * mm))
 
     doc = SimpleDocTemplate(
@@ -1634,7 +1707,6 @@ def render_document(kind: str, fields: dict) -> bytes:
         topMargin=16 * mm,
         bottomMargin=16 * mm,
     )
-    school = fields.get("school") or {}
     flow = []
     _school_header(flow, school)
 
@@ -1720,6 +1792,7 @@ def render_document(kind: str, fields: dict) -> bytes:
 class DocumentRenderRequest(BaseModel):
     kind: str
     fields: dict = {}
+    school: dict = {}
 ```
 
 (Append at the end of the file, keeping the existing `from pydantic import ...` import line untouched.)
@@ -1735,7 +1808,7 @@ Inside `create_app()`, after the `/api/audit` route (before `return app`), add:
     @app.post("/api/documents/render", dependencies=[require_token], tags=["api"])
     def render_doc(body: DocumentRenderRequest):
         try:
-            pdf = render_document(body.kind, body.fields)
+            pdf = render_document(body.kind, body.fields, body.school)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         except RuntimeError as exc:
@@ -1754,7 +1827,7 @@ Inside `create_app()`, after the `/api/audit` route (before `return app`), add:
 - [ ] **Step 8: Run tests to verify they pass**
 
 Run: `pytest tests/test_documents.py -v`
-Expected: PASS (all 5)
+Expected: PASS (all 7)
 
 - [ ] **Step 9: Run the full backend suite**
 
@@ -1798,7 +1871,11 @@ export async function POST(req: NextRequest) {
   if (!guard.ok) return guard.response;
 
   const body = await req.json();
-  const { kind, fields } = body as { kind?: string; fields?: Record<string, unknown> };
+  const { kind, fields, school } = body as {
+    kind?: string;
+    fields?: Record<string, unknown>;
+    school?: Record<string, unknown>;
+  };
 
   if (!kind || !VALID_KINDS.includes(kind)) {
     return NextResponse.json({ error: "unknown kind" }, { status: 400 });
@@ -1819,7 +1896,9 @@ export async function POST(req: NextRequest) {
           : {}),
       },
       signal: AbortSignal.timeout(30000),
-      body: JSON.stringify({ kind, fields }),
+      // REVIEW FIX 1: forward school verbatim — the backend needs it for the
+      // document header; dropping it here empties every server PDF
+      body: JSON.stringify({ kind, fields, school: school ?? {} }),
     });
     if (!res.ok) {
       let detail = `backend ${res.status}`;
@@ -1910,8 +1989,16 @@ git commit -m "docs: DESIGN.md — document studio v0.3 section"
 
 ---
 
-## Self-Review (completed by planner)
+## Self-Review (completed by planner + review pass 1)
 
-- **Spec coverage:** 5 doc types → Tasks 2/5/8 ✓ · settings page → Task 4 ✓ · dashboard bars + agent strip → Task 6 ✓ · convert button → Task 6 ✓ · palette/shortcuts → Task 7 ✓ · print CSS → Task 3 ✓ · backend PDF + font + tests → Task 8 ✓ · BFF → Task 9 ✓ · DESIGN.md touch → Task 10 ✓
-- **Placeholders:** none — every step carries code.
-- **Type consistency:** `SchoolInfo`/`DocType`/field interfaces defined in Tasks 1-2 and used verbatim in 4-8; backend field mapping mirrors frontend `docFields` keys, with the two explicit mappings (`letterSubject → subject`, summary `body` concatenation) already applied inside Task 5 `downloadPdf`.
+**Review pass 1 (auditor, commit 1e821c0) — all blockers fixed:**
+
+1. **HIGH — school dropped in PDF chain:** `DocumentRenderRequest.school: dict = {}` added (schema) → BFF forwards `school` verbatim (Task 9) → `render_document(kind, fields, school)` renders header from the param (Task 8) → new test `test_render_includes_school_name` asserts school name is actually inside the PDF bytes (decompressed content streams).
+2. **HIGH — unescaped markup in reportlab:** `xml.sax.saxutils.escape` applied at value level (`_s()` + `_school_header`), so structural `<b>` markup stays intact while teacher text (`<`, `&`, `≥`) is escaped → new test `test_render_escapes_markup_in_body` ("3 < 5 และ 7 & 8" → 200 + text present).
+3. **MEDIUM — newline replace:** Python `str.replace` replaces all occurrences; commented in `_para()` so future readers don't "fix" it into a regex.
+4. **MEDIUM — certificate print orientation:** `@page landscape { size: A4 landscape }` + `.doc-landscape { page: landscape }` added (Task 3) — browser uses landscape paper for certificates.
+5. **LOW batch:** `buf = []` dead line removed; "วิชา" ternary simplified; Task 6 wording de-contradicted; preview div no longer uses `.doc-preview` (line-clamp vs scroll overflow conflict); font fallback now points at google/fonts `static/` TTF (variable fonts unsupported by TTFont — stop-and-ask if unavailable). `ToastProvider` in `/settings` is a single provider (page-local, correct for a separate route); `summary` requires no fields by design (frontend concatenates body).
+
+**Spec coverage:** 5 doc types → Tasks 2/5/8 ✓ · settings page → Task 4 ✓ · dashboard bars + agent strip → Task 6 ✓ · convert button → Task 6 ✓ · palette/shortcuts → Task 7 ✓ · print CSS → Task 3 ✓ · backend PDF + font + tests → Task 8 ✓ · BFF → Task 9 ✓ · DESIGN.md touch → Task 10 ✓
+**Placeholders:** none — every step carries code.
+**Type consistency:** `SchoolInfo`/`DocType`/field interfaces defined in Tasks 1-2 and used verbatim in 4-8; backend field mapping mirrors frontend `docFields` keys, with the two explicit mappings (`letterSubject → subject`, summary `body` concatenation) already applied inside Task 5 `downloadPdf`; `school` now flows frontend → BFF → backend → renderer end-to-end.
