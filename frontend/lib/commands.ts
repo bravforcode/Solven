@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { AGENT_LABEL } from "@/lib/types";
 import type { AgentType } from "@/lib/types";
+import type { DocType } from "@/lib/documents";
 
 export interface CommandItem {
   id: string;
@@ -17,6 +18,9 @@ export type StatusFilter = "all" | "pending" | "approved" | "rejected";
 export interface CommandActions {
   goCreate: (agent?: AgentType) => void;
   goQueue: () => void;
+  goDocs: (type?: DocType) => void;
+  goSettings: () => void;
+  printCurrent: () => void;
   setStatusFilter: (s: StatusFilter) => void;
   setAgentFilter: (a: "all" | AgentType) => void;
   resetFilters: () => void;
@@ -48,6 +52,30 @@ export function buildCommands(actions: CommandActions): CommandItem[] {
       hint: "2",
       keywords: "คิว ตรวจ queue รออนุมัติ ร่าง",
       onSelect: () => actions.goQueue(),
+    },
+    {
+      id: "go-docs",
+      group: "ไปยังหน้า",
+      label: "เอกสาร",
+      hint: "g",
+      keywords: "เอกสาร ใบงาน เกียรติบัตร หนังสือ docs print พิมพ์",
+      onSelect: () => actions.goDocs(),
+    },
+    {
+      id: "go-settings",
+      group: "ไปยังหน้า",
+      label: "ตั้งค่าโรงเรียน",
+      hint: "s",
+      keywords: "ตั้งค่า โรงเรียน settings",
+      onSelect: () => actions.goSettings(),
+    },
+    {
+      id: "print-current",
+      group: "เอกสาร",
+      label: "พิมพ์เอกสารปัจจุบัน",
+      hint: "p",
+      keywords: "พิมพ์ pdf print เอกสาร",
+      onSelect: () => actions.printCurrent(),
     },
     ...agents.map((a): CommandItem => ({
       id: `create-${a}`,

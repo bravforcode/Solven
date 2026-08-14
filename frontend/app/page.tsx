@@ -994,6 +994,14 @@ export default function Home() {
           setView("create");
         },
         goQueue: () => setView("queue"),
+        goDocs: (type) => goDocs(type),
+        goSettings: () => {
+          window.location.href = "/settings";
+        },
+        printCurrent: () => {
+          if (view === "docs") handlePrintDoc();
+          else pushToast("info", "ไปที่หน้าเอกสาร แล้วกดพิมพ์อีกครั้ง");
+        },
         setStatusFilter: (s) => setStatusFilter(s),
         setAgentFilter: (a) => setAgentFilter(a),
         resetFilters,
@@ -1002,7 +1010,7 @@ export default function Home() {
           seedDemoData();
         },
       }),
-    [resetFilters, seedDemoData]
+    [goDocs, handlePrintDoc, resetFilters, seedDemoData, view, pushToast]
   );
 
   /* ----- keyboard shortcuts (desktop only) ----- */
@@ -1017,6 +1025,13 @@ export default function Home() {
     {
       goCreate: () => setView("create"),
       goQueue: () => setView("queue"),
+      goDocs: () => goDocs(),
+      goSettings: () => {
+        window.location.href = "/settings";
+      },
+      printCurrent: () => {
+        if (view === "docs") handlePrintDoc();
+      },
       focusSearch,
       focusAnswers,
       openPalette: () => setPaletteOpen(true),
