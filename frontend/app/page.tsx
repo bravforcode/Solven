@@ -1079,6 +1079,27 @@ export default function Home() {
           </Button>
         </>
       )}
+      {d.status === "approved" && (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setDocPrefill({
+              type:
+                d.agent === "lesson-plan"
+                  ? "lesson-record"
+                  : d.agent === "reporting"
+                  ? "official-letter"
+                  : "worksheet",
+              content: d.output,
+            });
+            goDocs();
+          }}
+          title="สร้างเอกสารจากร่างนี้ (ใบงาน/บันทึกหลังสอน/หนังสือราชการ)"
+        >
+          📄 ทำเป็นเอกสาร
+        </Button>
+      )}
       <span className="spacer" />
       <button
         type="button"
@@ -1448,6 +1469,39 @@ export default function Home() {
 
           {view === "queue" && (
             <section>
+              <div className="panel" style={{ marginBottom: 12, padding: "6px 0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px 0" }}>
+                  <span className="field-label" style={{ fontSize: "0.72rem" }}>กิจกรรม 7 วันล่าสุด</span>
+                </div>
+                <div className="activity-bars" aria-label="จำนวนงานที่สร้างใน 7 วัน">
+                  {(() => {
+                    const days: { label: string; count: number; isToday: boolean }[] = [];
+                    for (let i = 6; i >= 0; i--) {
+                      const d = new Date();
+                      d.setDate(d.getDate() - i);
+                      const key = d.toDateString();
+                      const count = drafts.filter((x) => new Date(x.createdAt).toDateString() === key).length;
+                      days.push({
+                        label: d.toLocaleDateString("th-TH", { weekday: "short" }),
+                        count,
+                        isToday: i === 0,
+                      });
+                    }
+                    const max = Math.max(1, ...days.map((x) => x.count));
+                    return days.map((day, i) => (
+                      <div className="activity-col" key={i} title={`${day.count} รายการ`}>
+                        <span className="activity-day">{day.count}</span>
+                        <div
+                          className="activity-bar"
+                          data-active={day.isToday}
+                          style={{ height: `${Math.max(2, (day.count / max) * 100)}%` }}
+                        />
+                        <span className="activity-day">{day.label}</span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
               <div className="stats-row" aria-label="สรุปสถานะ">
                 <div className="stat stat-blue">
                   <div className="stat-num">
@@ -1476,6 +1530,30 @@ export default function Home() {
               </div>
 
               <div className="filters">
+                <div className="agent-strip">
+                  <button
+                    type="button"
+                    className="agent-strip-chip"
+                    aria-pressed={agentFilter === "all"}
+                    onClick={() => setAgentFilter("all")}
+                  >
+                    ทุกงาน <span className="agent-strip-count">{drafts.length}</span>
+                  </button>
+                  {AGENT_OPTIONS.map((a) => {
+                    const count = drafts.filter((d) => d.agent === a && d.status === "pending").length;
+                    return (
+                      <button
+                        key={a}
+                        type="button"
+                        className="agent-strip-chip"
+                        aria-pressed={agentFilter === a}
+                        onClick={() => setAgentFilter(agentFilter === a ? "all" : a)}
+                      >
+                        {AGENT_LABEL[a]} <span className="agent-strip-count">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
                 <div className="chip-row">
                   {(["all", "pending", "approved", "rejected"] as StatusFilter[]).map((s) => (
                     <button
