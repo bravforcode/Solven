@@ -14,10 +14,21 @@ import { useToast, ToastType, ToastOptions } from "@/components/ui/ToastProvider
 import { buildCommands, CommandItem } from "@/lib/commands";
 import { useSelection, useShortcuts, useMediaQuery } from "@/lib/hooks";
 import { applyBatch, patchDraftStatus } from "@/lib/drafts";
+import {
+  buildCertificateHtml,
+  buildLessonRecordHtml,
+  buildOfficialLetterHtml,
+  buildSummaryReportHtml,
+  buildWorksheetHtml,
+  DOC_TYPE_LABEL,
+  DocType,
+  printDocument,
+} from "@/lib/documents";
+import { loadSchool } from "@/lib/school";
 
 /* ============ types & constants ============ */
 
-type View = "create" | "queue";
+type View = "create" | "queue" | "docs";
 type StatusFilter = "all" | Draft["status"];
 type SortOrder = "newest" | "oldest" | "agent";
 
@@ -110,6 +121,7 @@ const DEMO_TASKS: { agent: AgentType; input: string; rubric?: string }[] = [
 const VIEW_TITLES: Record<View, { title: string; sub: string }> = {
   create: { title: "สร้างงาน", sub: "เลือกงานที่อยากให้ช่วย — ผลลัพธ์ทุกชิ้นเป็นร่างที่ครูต้องอนุมัติ" },
   queue: { title: "คิวตรวจ", sub: "ตรวจสอบและอนุมัติร่างที่ agent สร้างให้ — ทุกชิ้นต้องผ่านครู" },
+  docs: { title: "เอกสาร", sub: "สร้างเอกสารราชการจากร่างที่อนุมัติ — พิมพ์หรือบันทึก PDF ได้ทันที" },
 };
 
 /* ============ helpers ============ */
@@ -237,6 +249,8 @@ const ICON_CREATE =
   "M12 5v14 M5 12h14";
 const ICON_QUEUE =
   "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01";
+const ICON_DOCS =
+  "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M9 13h6 M9 17h6";
 const ICON_COPY =
   "M8 8h12a1 1 0 011 1v12a1 1 0 01-1 1H8a1 1 0 01-1-1V9a1 1 0 011-1z M16 8V4a1 1 0 00-1-1H4a1 1 0 00-1 1v12a1 1 0 001 1h4";
 const ICON_DOWNLOAD =
@@ -286,6 +300,161 @@ export default function Home() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  // document studio state
+  const [docType, setDocType] = useState<DocType>("worksheet");
+  const [docPrefill, setDocPrefill] = useState<{ type: DocType; content: string } | null>(null);
+  const [docFields, setDocFields] = useState({
+    number: "",
+    subject: "",
+    grade: "ป.5",
+    date: new Date().toLocaleDateString("th-TH"),
+    instructions: "",
+    body: "",
+    unit: "",
+    students: "30",
+    indicators: "",
+    results: "",
+    problems: "",
+    fixes: "",
+    refNo: "",
+    to: "",
+    letterSubject: "",
+    studentName: "",
+    detail: "",
+    directorName: "",
+  });
+  const [docSourceId, setDocSourceId] = useState("");
+  const setDoc = useCallback((k: keyof typeof docFields, v: string) => {
+    setDocFields((prev) => ({ ...prev, [k]: v }));
+  }, []);
+
+  const goDocs = useCallback((type?: DocType) => {
+    if (type) setDocType(type);
+    setView("docs");
+  }, []);
+
+  const approvedDrafts = drafts.filter((d) => d.status === "approved");
+  const DOC_SOURCE_AGENT: Partial<Record<DocType, AgentType[]>> = {
+    worksheet: ["grading"],
+    "lesson-record": ["lesson-plan"],
+    "official-letter": ["reporting"],
+    certificate: ["grading", "reporting"],
+  };
+  const docSourceDrafts = approvedDrafts.filter((d) =>
+    (DOC_SOURCE_AGENT[docType] ?? []).includes(d.agent)
+  );
+
+  function applyDocSource(id: string) {
+    const d = docSourceDrafts.find((x) => x.id === id);
+    if (!d) return;
+    setDocSourceId(id);
+    if (docType === "worksheet") {
+      setDoc("subject", docFields.subject || "วิชา");
+      setDoc("body", d.output);
+    } else if (docType === "lesson-record") {
+      setDoc("subject", docFields.subject || "วิชา");
+      setDoc("results", d.output);
+    } else if (docType === "official-letter") {
+      setDoc("letterSubject", "รายงานความก้าวหน้านักเรียน");
+      setDoc("body", d.output);
+    } else if (docType === "certificate") {
+      setDoc("detail", d.output);
+    }
+  }
+
+  const school = loadSchool();
+  const docHtml = useMemo(() => {
+    const s = loadSchool();
+    switch (docType) {
+      case "worksheet":
+        return buildWorksheetHtml(s, docFields);
+      case "lesson-record":
+        return buildLessonRecordHtml(s, {
+          subject: docFields.subject,
+          unit: docFields.unit,
+          grade: docFields.grade,
+          students: docFields.students,
+          date: docFields.date,
+          indicators: docFields.indicators,
+          results: docFields.results,
+          problems: docFields.problems,
+          fixes: docFields.fixes,
+          teacherName: s.teacherName,
+        });
+      case "official-letter":
+        return buildOfficialLetterHtml(s, {
+          refNo: docFields.refNo,
+          date: docFields.date,
+          subject: docFields.letterSubject,
+          to: docFields.to,
+          body: docFields.body,
+          teacherName: s.teacherName,
+          position: s.position,
+        });
+      case "certificate":
+        return buildCertificateHtml(s, {
+          studentName: docFields.studentName,
+          detail: docFields.detail,
+          directorName: s.directorName,
+          date: docFields.date,
+        });
+      case "summary":
+        return buildSummaryReportHtml(s, approvedDrafts);
+    }
+  }, [docType, docFields, approvedDrafts]);
+
+  function handlePrintDoc() {
+    if (docType === "summary" && approvedDrafts.length === 0) {
+      pushToast("info", "ยังไม่มีงานที่อนุมัติให้พิมพ์สรุป");
+      return;
+    }
+    printDocument(docHtml);
+  }
+
+  async function downloadPdf() {
+    try {
+      const fields = {
+        ...docFields,
+        // backend reads `subject`; the letter form stores it as `letterSubject`
+        subject: docType === "official-letter" ? docFields.letterSubject : docFields.subject,
+      };
+      if (docType === "summary") {
+        fields.body = approvedDrafts
+          .map((d) => `${AGENT_LABEL[d.agent]} — ${fmtTime(d.createdAt)}\n\n${d.output}`)
+          .join("\n\n---\n\n");
+      }
+      const res = await fetch("/api/documents/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: docType, fields, school: loadSchool() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `solven-${docType}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      pushToast("success", "ดาวน์โหลด PDF แล้ว");
+    } catch (err) {
+      pushToast("error", `สร้าง PDF ไม่สำเร็จ: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // consume "ทำเป็นเอกสาร" prefill from the queue when arriving at docs
+  useEffect(() => {
+    if (view === "docs" && docPrefill) {
+      setDocType(docPrefill.type);
+      setDoc("body", docPrefill.content);
+      if (docPrefill.type === "official-letter")
+        setDoc("letterSubject", "รายงานความก้าวหน้านักเรียน");
+      setDocPrefill(null);
+    }
+  }, [view, docPrefill, setDoc]);
 
   const { push } = useToast();
   const pushToast = useCallback(
@@ -875,6 +1044,14 @@ export default function Home() {
       >
         <Icon d={ICON_QUEUE} /> คิวตรวจ
         {pendingCount > 0 && <span className="nav-count">{pendingCount}</span>}
+      </button>
+      <button
+        type="button"
+        className="nav-item"
+        aria-pressed={view === "docs"}
+        onClick={() => setView("docs")}
+      >
+        <Icon d={ICON_DOCS} /> เอกสาร
       </button>
     </>
   );
@@ -1486,6 +1663,262 @@ export default function Home() {
                   ))}
                 </div>
               )}
+            </section>
+          )}
+
+          {view === "docs" && (
+            <section>
+              <div className="panel panel-pad" style={{ marginBottom: 14 }}>
+                <h2 className="section-title">เลือกแบบฟอร์มเอกสาร</h2>
+                <p className="section-hint" style={{ marginBottom: 14 }}>
+                  ทุกแบบใช้หัวเอกสารจากหน้า “ตั้งค่าโรงเรียน” — พิมพ์ได้ทันที แม้ออฟไลน์
+                </p>
+                <div className="docs-grid">
+                  {(Object.keys(DOC_TYPE_LABEL) as DocType[]).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className="agent-card"
+                      aria-pressed={docType === t}
+                      onClick={() => setDocType(t)}
+                    >
+                      <span className="agent-name">{DOC_TYPE_LABEL[t]}</span>
+                      <span className="agent-desc">
+                        {t === "summary"
+                          ? `พิมพ์งานที่อนุมัติแล้วทั้งหมด (${approvedDrafts.length} รายการ)`
+                          : t === "certificate"
+                          ? "A4 แนวนอน พร้อมกรอบและช่องลงชื่อผู้อำนวยการ"
+                          : "A4 ตั้ง พร้อมหัวเอกสารราชการ"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <Link href="/settings" className="sidebar-link">
+                  ⚙ ตั้งค่าโรงเรียน (ชื่อ/ที่อยู่/ครูผู้สอน)
+                </Link>
+              </div>
+
+              <div className="panel panel-pad" style={{ marginBottom: 14 }}>
+                <h2 className="section-title">ข้อมูลเอกสาร</h2>
+                {docType !== "summary" && docSourceDrafts.length > 0 && (
+                  <div className="field" style={{ marginBottom: 14 }}>
+                    <label className="field-label" htmlFor="doc-source">
+                      ดึงจากร่างที่อนุมัติแล้ว
+                    </label>
+                    <select
+                      id="doc-source"
+                      className="select"
+                      value={docSourceId}
+                      onChange={(e) => applyDocSource(e.target.value)}
+                    >
+                      <option value="">— เลือกร่างที่อนุมัติแล้ว —</option>
+                      {docSourceDrafts.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {AGENT_LABEL[d.agent]} · {fmtTime(d.createdAt)}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="field-hint">เนื้อหาจะถูกแทรกเข้าฟิลด์ที่ตรงกันอัตโนมัติ</span>
+                  </div>
+                )}
+
+                {docType === "worksheet" && (
+                  <div
+                    className="form-grid"
+                    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+                  >
+                    <div className="field">
+                      <label className="field-label" htmlFor="ws-number">ใบงานที่</label>
+                      <input id="ws-number" className="input" value={docFields.number} onChange={(e) => setDoc("number", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="ws-subject">วิชา</label>
+                      <input id="ws-subject" className="input" value={docFields.subject} onChange={(e) => setDoc("subject", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="ws-grade">ชั้น</label>
+                      <input id="ws-grade" className="input" value={docFields.grade} onChange={(e) => setDoc("grade", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="ws-date">วันที่</label>
+                      <input id="ws-date" className="input" value={docFields.date} onChange={(e) => setDoc("date", e.target.value)} />
+                    </div>
+                  </div>
+                )}
+
+                {docType === "worksheet" && (
+                  <>
+                    <div className="field">
+                      <label className="field-label" htmlFor="ws-instructions">คำชี้แจง</label>
+                      <textarea
+                        id="ws-instructions"
+                        className="textarea"
+                        style={{ minHeight: 54 }}
+                        value={docFields.instructions}
+                        onChange={(e) => setDoc("instructions", e.target.value)}
+                        placeholder="จงตอบคำถามต่อไปนี้"
+                      />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="ws-body">เนื้อหา / โจทย์</label>
+                      <textarea
+                        id="ws-body"
+                        className="textarea"
+                        style={{ minHeight: 140 }}
+                        value={docFields.body}
+                        onChange={(e) => setDoc("body", e.target.value)}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {docType === "lesson-record" && (
+                  <div
+                    className="form-grid"
+                    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+                  >
+                    {([
+                      ["lr-subject", "subject", "วิชา"],
+                      ["lr-unit", "unit", "หน่วยการเรียนรู้"],
+                      ["lr-grade", "grade", "ชั้น"],
+                      ["lr-students", "students", "จำนวนนักเรียน"],
+                      ["lr-date", "date", "วันที่สอน"],
+                    ] as const).map(([id, key, label]) => (
+                      <div className="field" key={id}>
+                        <label className="field-label" htmlFor={id}>{label}</label>
+                        <input id={id} className="input" value={docFields[key]} onChange={(e) => setDoc(key, e.target.value)} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {docType === "lesson-record" && (
+                  <>
+                    {([
+                      ["lr-indicators", "indicators", "มาตรฐาน / ตัวชี้วัด"],
+                      ["lr-results", "results", "ผลที่เกิดขึ้นจริง"],
+                      ["lr-problems", "problems", "ปัญหา / อุปสรรค"],
+                      ["lr-fixes", "fixes", "แนวทางแก้ไข / พัฒนา"],
+                    ] as const).map(([id, key, label]) => (
+                      <div className="field" key={id}>
+                        <label className="field-label" htmlFor={id}>{label}</label>
+                        <textarea id={id} className="textarea" style={{ minHeight: 64 }} value={docFields[key]} onChange={(e) => setDoc(key, e.target.value)} />
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {docType === "official-letter" && (
+                  <div
+                    className="form-grid"
+                    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+                  >
+                    <div className="field">
+                      <label className="field-label" htmlFor="ol-ref">ที่</label>
+                      <input id="ol-ref" className="input" value={docFields.refNo} onChange={(e) => setDoc("refNo", e.target.value)} placeholder={school.refNo} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="ol-date">วันที่</label>
+                      <input id="ol-date" className="input" value={docFields.date} onChange={(e) => setDoc("date", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="ol-subject">เรื่อง</label>
+                      <input id="ol-subject" className="input" value={docFields.letterSubject} onChange={(e) => setDoc("letterSubject", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="ol-to">เรียน</label>
+                      <input id="ol-to" className="input" value={docFields.to} onChange={(e) => setDoc("to", e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {docType === "official-letter" && (
+                  <div className="field">
+                    <label className="field-label" htmlFor="ol-body">เนื้อหา</label>
+                    <textarea
+                      id="ol-body"
+                      className="textarea"
+                      style={{ minHeight: 140 }}
+                      value={docFields.body}
+                      onChange={(e) => setDoc("body", e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {docType === "certificate" && (
+                  <div
+                    className="form-grid"
+                    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+                  >
+                    <div className="field">
+                      <label className="field-label" htmlFor="cf-name">ชื่อนักเรียน</label>
+                      <input id="cf-name" className="input" value={docFields.studentName} onChange={(e) => setDoc("studentName", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="cf-date">วันที่</label>
+                      <input id="cf-date" className="input" value={docFields.date} onChange={(e) => setDoc("date", e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {docType === "certificate" && (
+                  <div className="field">
+                    <label className="field-label" htmlFor="cf-detail">เนื่องในโอกาส / รายละเอียด</label>
+                    <textarea
+                      id="cf-detail"
+                      className="textarea"
+                      style={{ minHeight: 90 }}
+                      value={docFields.detail}
+                      onChange={(e) => setDoc("detail", e.target.value)}
+                      placeholder="เช่น ได้รับรางวัลชนะเลิศการประกวดอ่านทำนองเสนาะ ระดับชั้น ป.5"
+                    />
+                  </div>
+                )}
+
+                {docType === "summary" && (
+                  <div className="empty">
+                    <div className="empty-icon">📄</div>
+                    <div className="empty-title">
+                      {approvedDrafts.length > 0
+                        ? `จะพิมพ์ ${approvedDrafts.length} รายการที่อนุมัติแล้ว`
+                        : "ยังไม่มีงานที่อนุมัติ"}
+                    </div>
+                    <p className="empty-text">
+                      {approvedDrafts.length > 0
+                        ? "รายงานสรุปจะเรียงตามเวลาที่สร้าง พร้อมหัวเอกสารจากตั้งค่าโรงเรียน"
+                        : "ไปอนุมัติงานในคิวตรวจก่อน — จากนั้นกลับมาพิมพ์สรุปได้ที่นี่"}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="panel panel-pad">
+                <h2 className="section-title">ตัวอย่างเอกสาร</h2>
+                <div
+                  className="panel"
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    fontFamily: "var(--font)",
+                    background: "var(--surface-2)",
+                    borderRadius: 8,
+                    padding: 12,
+                    maxHeight: 220,
+                    overflow: "auto",
+                  }}
+                >
+                  {docHtml.replace(/<[^>]+>/g, "").slice(0, 400)}
+                </div>
+                <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+                  <Button type="button" onClick={handlePrintDoc}>
+                    🖨 พิมพ์ / บันทึก PDF
+                  </Button>
+                  {engine === "backend" && (
+                    <Button type="button" variant="secondary" onClick={downloadPdf}>
+                      ⬇ ดาวน์โหลด PDF (server)
+                    </Button>
+                  )}
+                </div>
+                <span className="field-hint" style={{ display: "block", marginTop: 8 }}>
+                  พิมพ์จากเบราว์เซอร์ แล้วเลือก “บันทึกเป็น PDF” ได้เช่นกัน — ใช้ได้แม้ออฟไลน์
+                </span>
+              </div>
             </section>
           )}
         </main>
