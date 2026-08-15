@@ -74,7 +74,7 @@ export default function TutorPage() {
             <h2 className="section-title">บทสนทนา</h2>
             {messages.length === 0 && (
               <p className="section-hint" style={{ marginTop: 10 }}>
-                ถามคำถามการบ้านได้เลย เช่น "ช่วยอธิบายเศษส่วนหน่อย" หรือ "วัฏจักรน้ำคืออะไร"
+                ถามคำถามการบ้านได้เลย เช่น “ช่วยอธิบายเศษส่วนหน่อย” หรือ “วัฏจักรน้ำคืออะไร”
               </p>
             )}
             <div style={{ marginTop: 10 }}>
