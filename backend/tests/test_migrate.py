@@ -59,10 +59,14 @@ def test_migration_failure_is_atomic(tmp_path, db_url):
     conn.close()
     # cleanup: the scratch 001_ok.sql was committed into the shared tracker —
     # remove it so later runs of test_applies_migrations_in_order stay green
-    c = psycopg.connect(db_url, row_factory=dict_row)
-    c.execute("DELETE FROM schema_migrations WHERE name='001_ok.sql'")
-    c.commit()
-    c.close()
+    # (finally: even if an assert above fails, the tracker is restored)
+    try:
+        c = psycopg.connect(db_url, row_factory=dict_row)
+        c.execute("DELETE FROM schema_migrations WHERE name='001_ok.sql'")
+        c.commit()
+        c.close()
+    except Exception:
+        pass
 
 
 def test_indexes_created(conn):
