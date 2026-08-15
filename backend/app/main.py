@@ -138,6 +138,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             raise HTTPException(503, f"db not ready: {type(exc).__name__}") from exc
         return {"status": "ready", "version": settings.version}
 
+    # NOTE: dependency order matters — ensure_org_membership MUST run before
+    # require_quota (usage_counters.org_id has an FK to orgs(id); a quota
+    # increment for a not-yet-provisioned org would 500). Quota counts
+    # ATTEMPTS, not completions: it is charged before agent validation and
+    # before the run outcome is known (anti-flood design).
     @app.post("/api/coordinator", dependencies=[require_token, Depends(ensure_org_membership(store, settings)), Depends(require_quota(store, settings))], tags=["api"])
     def submit_task(body: TaskRequest, request: Request) -> DraftOut:
         if body.agent not in VALID_AGENTS:
@@ -237,10 +242,21 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @app.post("/api/internal/billing/webhook", dependencies=[require_token], tags=["internal"])
     def billing_webhook(body: BillingWebhookEvent) -> dict:
         """Idempotent subscription sync — called by the BFF after Stripe signature
-        verification. Dedup by Stripe event id."""
+        verification. Dedup by Stripe event id.
+
+        Validation happens BEFORE record_stripe_event: a malformed payload must
+        not burn the event id (Stripe retries the same id for ~3 days — burning
+        it early would permanently drop the event).
+        """
+        data = body.data
+        if body.type in (
+            "customer.subscription.created",
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+        ) and not data.get("stripe_sub_id"):
+            raise HTTPException(400, "missing stripe_sub_id")
         if not store.record_stripe_event(body.event_id):
             return {"received": True, "duplicate": True}
-        data = body.data
         org_id = data.get("org_id")
         if not org_id:
             return {"received": True, "skipped": "no org_id"}

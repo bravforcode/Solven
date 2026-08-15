@@ -198,7 +198,7 @@ def run_task(
     if not inserted:
         # replayed request (e.g. offline-queue retry after reconnect) — return the
         # draft already produced instead of re-running the agent. The lookup is
-        # scoped to THIS teacher: a foreign task id must never leak another
+        # scoped to THIS teacher + org: a foreign task id must never leak another
         # teacher's draft (cross-tenant IDOR).
         existing = [d for d in store.list_drafts(teacher_id=teacher_id, org_id=org_id) if d["task_id"] == task_id]
         if existing:
@@ -225,5 +225,5 @@ def run_task(
         "engine": "mock",
     }
     make_coordinator(store, fail_closed=fail_closed).invoke(state)
-    drafts = [d for d in store.list_drafts() if d["task_id"] == task_id]
+    drafts = [d for d in store.list_drafts(teacher_id=teacher_id, org_id=org_id) if d["task_id"] == task_id]
     return drafts[0]

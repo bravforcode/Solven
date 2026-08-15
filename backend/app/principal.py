@@ -38,7 +38,7 @@ def principal_from(request: Request, settings: Settings) -> Principal:
     org_name = request.headers.get("x-solven-org-name")
     return {
         "teacher_id": teacher_id.strip(),
-        "tenant": (tenant.strip() if tenant else None),
-        "role": (role.strip() if role else None),
-        "org_name": (org_name.strip() if org_name else None),
+        "tenant": (tenant.strip() or None) if tenant else None,
+        "role": (role.strip() or None) if role else None,
+        "org_name": (org_name.strip() or None) if org_name else None,
     }

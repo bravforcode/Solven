@@ -150,12 +150,49 @@ def test_webhook_deleted_sets_canceled(monkeypatch, db_url, store, prod_db_url):
 
 def test_webhook_without_org_id_skipped(monkeypatch, db_url, store, prod_db_url):
     client = TestClient(_prod_app(monkeypatch, db_url, store, prod_db_url))
+    # non-subscription event (no stripe_sub_id required) with no org_id → skipped
     r = client.post(
         "/api/internal/billing/webhook",
-        json={"event_id": "evt_3", "type": "customer.subscription.updated", "data": {}},
+        json={"event_id": "evt_3", "type": "invoice.paid", "data": {}},
         headers=_auth(),
     )
     assert r.json() == {"received": True, "skipped": "no org_id"}
+
+
+def test_webhook_malformed_payload_does_not_burn_event_id(monkeypatch, db_url, store, prod_db_url):
+    """H1 regression: a malformed payload must 400 BEFORE record_stripe_event —
+    otherwise the event id is burned and Stripe's retry (same id) is dropped
+    forever as a duplicate."""
+    client = TestClient(_prod_app(monkeypatch, db_url, store, prod_db_url))
+    store.ensure_org("org-1", "School A")
+    malformed = {
+        "event_id": "evt_4",
+        "type": "customer.subscription.updated",
+        "data": {"org_id": "org-1"},  # missing stripe_sub_id
+    }
+    r = client.post("/api/internal/billing/webhook", json=malformed, headers=_auth())
+    assert r.status_code == 400
+    # event id NOT recorded → Stripe retry with a valid payload succeeds
+    r = client.post(
+        "/api/internal/billing/webhook",
+        json={
+            "event_id": "evt_4",
+            "type": "customer.subscription.updated",
+            "data": {
+                "org_id": "org-1",
+                "stripe_sub_id": "sub_1",
+                "status": "active",
+                "period_end": "2026-09-01T00:00:00Z",
+            },
+        },
+        headers=_auth(),
+    )
+    assert r.json() == {"received": True}
+    with store._c() as conn:
+        sub = conn.execute(
+            "SELECT stripe_sub_id FROM subscriptions WHERE org_id=%s", ("org-1",)
+        ).fetchone()
+    assert sub["stripe_sub_id"] == "sub_1"
 
 
 def test_billing_customer_endpoint(monkeypatch, db_url, store, prod_db_url):
