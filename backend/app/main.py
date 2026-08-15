@@ -15,6 +15,19 @@ from app.billing import require_quota
 from app.config import Settings
 from app.coordinator import FailClosedError, InFlightError, TaskNotOwnedError, run_task
 from app.db import DB_URL_DEFAULT, Store, now_iso
+from app.demo_features import (
+    attendance_summary,
+    audit_summary,
+    early_warning,
+    generate_exam,
+    line_preview,
+    llm_judge,
+    moe_report,
+    notifications,
+    question_bank,
+    rag_search,
+    roster_default,
+)
 from app.orgs import ensure_org_membership
 from app.principal import principal_from
 from app.seed import seed_demo
@@ -231,6 +244,84 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         principal = principal_from(request, settings)
         seeded = seed_demo(store, principal["teacher_id"])
         return {"seeded": seeded}
+
+    # ------------------------------------------------------------------
+    # Demo feature endpoints (dev/demo only — hard 404 in production).
+    # All generators are deterministic mocks (see app/demo_features.py).
+    # ------------------------------------------------------------------
+
+    def _demo_only():
+        if settings.env == "production":
+            raise HTTPException(404, "not found")
+
+    @app.get("/api/demo/roster", dependencies=[require_token], tags=["demo"])
+    def demo_roster() -> list[dict]:
+        """Mock class roster (feature 8)."""
+        _demo_only()
+        return roster_default()
+
+    @app.get("/api/demo/questions", dependencies=[require_token], tags=["demo"])
+    def demo_questions(subject: str | None = None, grade: str | None = None) -> list[dict]:
+        """Mock question bank (feature 9)."""
+        _demo_only()
+        return question_bank(subject, grade)
+
+    @app.post("/api/demo/exams/generate", dependencies=[require_token], tags=["demo"])
+    def demo_exam_generate(body: dict) -> dict:
+        """Mock exam generator (feature 9)."""
+        _demo_only()
+        subject = str(body.get("subject") or "คณิตศาสตร์")
+        grade = str(body.get("grade") or "ป.5")
+        count = int(body.get("count") or 5)
+        return generate_exam(subject, grade, count)
+
+    @app.get("/api/demo/rag", dependencies=[require_token], tags=["demo"])
+    def demo_rag(q: str, limit: int = 3) -> list[dict]:
+        """Mock RAG knowledge-base search (feature 12)."""
+        _demo_only()
+        return rag_search(q, limit)
+
+    @app.post("/api/demo/judge", dependencies=[require_token], tags=["demo"])
+    def demo_judge(body: dict) -> dict:
+        """Mock LLM-judge quality scoring (feature 13)."""
+        _demo_only()
+        return llm_judge(str(body.get("output") or ""), body.get("rubric"))
+
+    @app.get("/api/demo/early-warning", dependencies=[require_token], tags=["demo"])
+    def demo_early_warning() -> list[dict]:
+        """Mock early-warning flags (feature 14)."""
+        _demo_only()
+        return early_warning()
+
+    @app.get("/api/demo/moe-report", dependencies=[require_token], tags=["demo"])
+    def demo_moe_report(period: str = "ภาคเรียนที่ 1/2569") -> dict:
+        """Mock MOE Exchange report (feature 11)."""
+        _demo_only()
+        return moe_report(period)
+
+    @app.get("/api/demo/attendance", dependencies=[require_token], tags=["demo"])
+    def demo_attendance(period: str = "สัปดาห์นี้") -> dict:
+        """Mock attendance summary (feature 21)."""
+        _demo_only()
+        return attendance_summary(period)
+
+    @app.get("/api/demo/audit-summary", dependencies=[require_token], tags=["demo"])
+    def demo_audit_summary() -> dict:
+        """Mock audit dashboard summary (feature 32)."""
+        _demo_only()
+        return audit_summary()
+
+    @app.post("/api/demo/line-preview", dependencies=[require_token], tags=["demo"])
+    def demo_line_preview(body: dict) -> dict:
+        """Mock LINE OA message preview (feature 3)."""
+        _demo_only()
+        return line_preview(str(body.get("text") or ""), str(body.get("recipient") or "ผู้ปกครอง"))
+
+    @app.get("/api/demo/notifications", dependencies=[require_token], tags=["demo"])
+    def demo_notifications() -> list[dict]:
+        """Mock notification feed (feature 3)."""
+        _demo_only()
+        return notifications()
 
     @app.get("/api/audit", dependencies=[require_token], tags=["api"])
     def audit(task_id: Optional[str] = None, request: Request = None,

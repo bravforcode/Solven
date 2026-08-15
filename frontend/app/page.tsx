@@ -18,7 +18,11 @@ import { applyBatch, patchDraftStatus } from "@/lib/drafts";
 import {
   buildCertificateHtml,
   buildLessonRecordHtml,
+  buildMemoHtml,
   buildOfficialLetterHtml,
+  buildOrderHtml,
+  buildPp5Html,
+  buildPp6Html,
   buildSummaryReportHtml,
   buildWorksheetHtml,
   DOC_TYPE_LABEL,
@@ -26,6 +30,9 @@ import {
   printDocument,
 } from "@/lib/documents";
 import { loadSchool } from "@/lib/school";
+import { listenOnce } from "@/lib/voice";
+import { speak } from "@/lib/tts";
+import { judgeOutput, localJudge, saveRating } from "@/lib/feedback";
 
 /* ============ types & constants ============ */
 
@@ -324,8 +331,18 @@ export default function Home() {
     studentName: "",
     detail: "",
     directorName: "",
+    birthDate: "",
+    gpa: "",
+    subjectsText: "",
+    from: "",
+    senderName: "",
   });
   const [docSourceId, setDocSourceId] = useState("");
+  // feature 4/5/13/3/10/33: voice input, TTS, feedback rating, LINE preview,
+  // OCR upload mock, cost display
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [linePreviewId, setLinePreviewId] = useState<string | null>(null);
+  const [ratings, setRatings] = useState<Record<string, number>>({});
   const setDoc = useCallback((k: keyof typeof docFields, v: string) => {
     setDocFields((prev) => ({ ...prev, [k]: v }));
   }, []);
@@ -343,6 +360,10 @@ export default function Home() {
     "lesson-record": ["lesson-plan"],
     "official-letter": ["reporting"],
     certificate: ["grading", "reporting"],
+    pp5: ["grading"],
+    pp6: ["grading"],
+    order: ["reporting"],
+    memo: ["reporting"],
   };
   const docSourceDrafts = approvedDrafts.filter((d) =>
     (DOC_SOURCE_AGENT[docType] ?? []).includes(d.agent)
@@ -361,6 +382,10 @@ export default function Home() {
       setDoc("body", d.output);
     } else if (docType === "certificate") {
       setDoc("detail", d.output);
+    } else if (docType === "pp5" || docType === "pp6") {
+      setDoc("subjectsText", d.output);
+    } else if (docType === "order" || docType === "memo") {
+      setDoc("body", d.output);
     }
   }
 
@@ -402,6 +427,50 @@ export default function Home() {
         });
       case "summary":
         return buildSummaryReportHtml(s, approvedDrafts);
+      case "pp5":
+        return buildPp5Html(s, {
+          studentName: docFields.studentName,
+          grade: docFields.grade,
+          semester: s.semester,
+          year: s.year,
+          subjects: docFields.subjectsText
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => {
+              const [name, score = "", grade = ""] = line.split(",").map((x) => x.trim());
+              return { name, score, grade };
+            }),
+          teacherName: s.teacherName,
+        });
+      case "pp6":
+        return buildPp6Html(s, {
+          studentName: docFields.studentName,
+          birthDate: docFields.birthDate,
+          grade: docFields.grade,
+          semester: s.semester,
+          year: s.year,
+          gpa: docFields.gpa,
+          directorName: s.directorName,
+          date: docFields.date,
+        });
+      case "order":
+        return buildOrderHtml(s, {
+          refNo: docFields.refNo,
+          date: docFields.date,
+          subject: docFields.letterSubject,
+          body: docFields.body,
+          directorName: s.directorName,
+        });
+      case "memo":
+        return buildMemoHtml(s, {
+          from: docFields.from,
+          to: docFields.to,
+          date: docFields.date,
+          subject: docFields.letterSubject,
+          body: docFields.body,
+          senderName: docFields.senderName || s.teacherName,
+        });
     }
   }, [docType, docFields, approvedDrafts]);
 
@@ -1114,6 +1183,27 @@ export default function Home() {
       >
         <Icon d={ICON_DOCS} /> เอกสาร
       </button>
+      <Link href="/roster" className="nav-item">
+        รายชื่อนักเรียน
+      </Link>
+      <Link href="/exams" className="nav-item">
+        คลังข้อสอบ
+      </Link>
+      <Link href="/attendance" className="nav-item">
+        เช็คชื่อ/มาเรียน
+      </Link>
+      <Link href="/knowledge" className="nav-item">
+        คลังความรู้
+      </Link>
+      <Link href="/parent" className="nav-item">
+        สื่อสารผู้ปกครอง
+      </Link>
+      <Link href="/chat" className="nav-item">
+        แชทกับผู้ช่วย
+      </Link>
+      <Link href="/notifications" className="nav-item">
+        ศูนย์แจ้งเตือน
+      </Link>
     </>
   );
 
@@ -1162,6 +1252,27 @@ export default function Home() {
         </Button>
       )}
       <span className="spacer" />
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        onClick={() => {
+          const result = speak(d.output);
+          if (result.error) pushToast("error", result.error);
+        }}
+        title="อ่านผลลัพธ์ออกเสียง (TTS)"
+      >
+        🔊 อ่านให้ฟัง
+      </button>
+      {d.status === "approved" && d.agent === "reporting" && (
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => setLinePreviewId(linePreviewId === d.id ? null : d.id)}
+          title="ดูตัวอย่างข้อความ LINE OA"
+        >
+          💬 ดูตัวอย่าง LINE
+        </button>
+      )}
       <button
         type="button"
         className="btn btn-secondary btn-sm"
@@ -1223,6 +1334,100 @@ export default function Home() {
       ))}
     </span>
   );
+
+  // feature 4: voice input — fills the active agent's input field
+  const handleVoiceInput = async () => {
+    setVoiceBusy(true);
+    const result = await listenOnce();
+    setVoiceBusy(false);
+    if (result.transcript) {
+      if (agent === "grading") setInput((prev) => (prev ? `${prev}\n${result.transcript}` : result.transcript ?? ""));
+      else if (agent === "lesson-plan") setTopic(result.transcript);
+      else if (agent === "reporting") setSummary(result.transcript);
+      pushToast("success", "ได้ยินเสียงแล้ว: " + result.transcript);
+    } else if (result.error) {
+      pushToast("error", result.error);
+    }
+  };
+
+  // feature 10: OCR upload mock — reads the file name and fills a mock
+  // extraction (real OCR would call the backend /api/ocr endpoint)
+  const handleOcrUpload = (file: File | undefined) => {
+    if (!file) return;
+    const name = file.name.replace(/\.[^.]+$/, "");
+    setInput(
+      `[OCR สาธิต] อ่านจากไฟล์ "${name}" แล้ว:\nคำตอบนักเรียน (ตัวอย่าง): 2+2=4 เพราะเรานับนิ้วรวมกันได้ 4\nคำตอบนักเรียน (ตัวอย่าง): 5 x 8 = 40 เพราะ 5 x 4 = 20 แล้วคูณสอง`
+    );
+    pushToast("success", `OCR สาธิต: อ่านข้อความจาก "${file.name}" แล้ว (${Math.max(1, Math.round(file.size / 1024))} KB)`);
+  };
+
+  // feature 33: deterministic mock cost per draft (real billing reads agent_runs)
+  const mockCost = (d: Draft): string => {
+    const base = d.agent === "grading" ? 0.03 : d.agent === "lesson-plan" ? 0.05 : 0.04;
+    const jitter = (d.id.length * 7) % 10 / 100;
+    return `฿${(base + jitter).toFixed(2)}`;
+  };
+
+  // feature 3: inline LINE OA preview for approved reporting drafts
+  const linePreviewFor = (d: Draft) => (
+    <div
+      style={{
+        marginTop: 10,
+        padding: 12,
+        borderRadius: 10,
+        background: "#f0f7ff",
+        border: "1px solid #cfe3ff",
+        whiteSpace: "pre-wrap",
+        fontSize: "0.85rem",
+      }}
+    >
+      [LINE OA — Solven]
+      {"\n"}ถึง ผู้ปกครอง
+      {"\n\n"}
+      {d.output}
+      {"\n\n"}— ข้อความนี้สร้างโดย Solven (ตัวอย่าง)
+    </div>
+  );
+
+  // feature 13: teacher star rating (persisted via lib/feedback)
+  const rateDraft = (d: Draft, stars: number) => {
+    setRatings((prev) => ({ ...prev, [d.id]: stars }));
+    saveRating({ draftId: d.id, stars, comment: "", createdAt: new Date().toISOString() });
+    pushToast("success", `บันทึกคะแนนคุณภาพ ${stars}/5 แล้ว`);
+  };
+
+  const ratingRow = (d: Draft) => {
+    const current = ratings[d.id] ?? 0;
+    return (
+      <div className="draft-rating" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+        <span className="field-hint">คุณภาพ:</span>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            aria-label={`ให้ ${n} ดาว`}
+            onClick={() => rateDraft(d, n)}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 18,
+              color: n <= current ? "#f59e0b" : "#d1d5db",
+              padding: 0,
+            }}
+          >
+            ★
+          </button>
+        ))}
+        <span className="badge badge-pending" title="คะแนนคุณภาพอัตโนมัติ (LLM-judge สาธิต)">
+          AI: {localJudge(d.output).score}/100 · {localJudge(d.output).verdict}
+        </span>
+        <span className="field-hint" title="ค่าใช้จ่ายโดยประมาณของงานนี้ (โหมดสาธิต)">
+          ค่าใช้จ่าย {mockCost(d)}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div className="shell">
@@ -1388,6 +1593,20 @@ export default function Home() {
                       <span className="field-hint">
                         แยกคำตอบแต่ละคนด้วยการขึ้นบรรทัดใหม่ — ระบบจะสร้างร่างแยกให้ทุกคน (ทีละคนตามลำดับ)
                       </span>
+                      <div style={{ marginTop: 8 }}>
+                        <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer", display: "inline-flex" }}>
+                          📷 อัปโหลดรูปคำตอบ (OCR สาธิต)
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: "none" }}
+                            onChange={(e) => handleOcrUpload(e.target.files?.[0])}
+                          />
+                        </label>
+                        <span className="field-hint" style={{ marginLeft: 8 }}>
+                          สาธิต: อ่านชื่อไฟล์แล้วเติมข้อความตัวอย่าง (จริง: เรียก /api/ocr)
+                        </span>
+                      </div>
                     </div>
                   </>
                 )}
@@ -1498,7 +1717,7 @@ export default function Home() {
                   </>
                 )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+<div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                   <Button
                     type="submit"
                     size="full"
@@ -1513,6 +1732,15 @@ export default function Home() {
                       ? `ส่งให้ Coordinator${splitAnswers(input).length > 1 ? ` (${splitAnswers(input).length} คน)` : ""}`
                       : "ส่งให้ Coordinator"}
                   </Button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleVoiceInput}
+                    disabled={voiceBusy}
+                    title="พิมพ์ด้วยเสียง (Web Speech API)"
+                  >
+                    {voiceBusy ? "🎤 ฟังอยู่..." : "🎤 พิมพ์ด้วยเสียง"}
+                  </button>
                 </div>
                 {formError && (
                   <p role="alert" style={{ color: "var(--danger)", fontSize: "0.82rem", marginTop: 10 }}>
@@ -1809,6 +2037,8 @@ export default function Home() {
                           ))}
                         </ul>
                       )}
+                      {ratingRow(d)}
+                      {linePreviewId === d.id && linePreviewFor(d)}
                       <div className="draft-actions">{draftActions(d)}</div>
                     </article>
                   ))}
@@ -2036,6 +2266,138 @@ export default function Home() {
                         ? "รายงานสรุปจะเรียงตามเวลาที่สร้าง พร้อมหัวเอกสารจากตั้งค่าโรงเรียน"
                         : "ไปอนุมัติงานในคิวตรวจก่อน — จากนั้นกลับมาพิมพ์สรุปได้ที่นี่"}
                     </p>
+                  </div>
+                )}
+
+                {docType === "pp5" && (
+                  <div
+                    className="form-grid"
+                    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+                  >
+                    <div className="field">
+                      <label className="field-label" htmlFor="pp5-name">ชื่อนักเรียน</label>
+                      <input id="pp5-name" className="input" value={docFields.studentName} onChange={(e) => setDoc("studentName", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="pp5-grade">ชั้น</label>
+                      <input id="pp5-grade" className="input" value={docFields.grade} onChange={(e) => setDoc("grade", e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {docType === "pp5" && (
+                  <div className="field">
+                    <label className="field-label" htmlFor="pp5-subjects">
+                      รายวิชา (บรรทัดละวิชา: ชื่อวิชา, คะแนน, ผลการเรียน)
+                    </label>
+                    <textarea
+                      id="pp5-subjects"
+                      className="textarea"
+                      style={{ minHeight: 120 }}
+                      value={docFields.subjectsText}
+                      onChange={(e) => setDoc("subjectsText", e.target.value)}
+                      placeholder={"คณิตศาสตร์, 85, 4\nภาษาไทย, 78, 3.5\nวิทยาศาสตร์, 90, 4"}
+                    />
+                  </div>
+                )}
+
+                {docType === "pp6" && (
+                  <div
+                    className="form-grid"
+                    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+                  >
+                    <div className="field">
+                      <label className="field-label" htmlFor="pp6-name">ชื่อนักเรียน</label>
+                      <input id="pp6-name" className="input" value={docFields.studentName} onChange={(e) => setDoc("studentName", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="pp6-birth">วันเกิด</label>
+                      <input id="pp6-birth" className="input" value={docFields.birthDate} onChange={(e) => setDoc("birthDate", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="pp6-grade">ชั้น</label>
+                      <input id="pp6-grade" className="input" value={docFields.grade} onChange={(e) => setDoc("grade", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="pp6-gpa">เกรดเฉลี่ย (GPA)</label>
+                      <input id="pp6-gpa" className="input" value={docFields.gpa} onChange={(e) => setDoc("gpa", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="pp6-date">วันที่ออกใบรับรอง</label>
+                      <input id="pp6-date" className="input" value={docFields.date} onChange={(e) => setDoc("date", e.target.value)} />
+                    </div>
+                  </div>
+                )}
+
+                {docType === "order" && (
+                  <div
+                    className="form-grid"
+                    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+                  >
+                    <div className="field">
+                      <label className="field-label" htmlFor="od-ref">เลขที่คำสั่ง</label>
+                      <input id="od-ref" className="input" value={docFields.refNo} onChange={(e) => setDoc("refNo", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="od-date">วันที่</label>
+                      <input id="od-date" className="input" value={docFields.date} onChange={(e) => setDoc("date", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="od-subject">เรื่อง</label>
+                      <input id="od-subject" className="input" value={docFields.letterSubject} onChange={(e) => setDoc("letterSubject", e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {docType === "order" && (
+                  <div className="field">
+                    <label className="field-label" htmlFor="od-body">เนื้อหาคำสั่ง</label>
+                    <textarea
+                      id="od-body"
+                      className="textarea"
+                      style={{ minHeight: 120 }}
+                      value={docFields.body}
+                      onChange={(e) => setDoc("body", e.target.value)}
+                      placeholder="อาศัยอำนาจตามความในมาตรา 39 แห่ง พ.ร.บ.การศึกษาแห่งชาติ..."
+                    />
+                  </div>
+                )}
+
+                {docType === "memo" && (
+                  <div
+                    className="form-grid"
+                    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+                  >
+                    <div className="field">
+                      <label className="field-label" htmlFor="mm-from">จาก</label>
+                      <input id="mm-from" className="input" value={docFields.from} onChange={(e) => setDoc("from", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="mm-to">ถึง</label>
+                      <input id="mm-to" className="input" value={docFields.to} onChange={(e) => setDoc("to", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="mm-date">วันที่</label>
+                      <input id="mm-date" className="input" value={docFields.date} onChange={(e) => setDoc("date", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="mm-subject">เรื่อง</label>
+                      <input id="mm-subject" className="input" value={docFields.letterSubject} onChange={(e) => setDoc("letterSubject", e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor="mm-sender">ผู้บันทึก</label>
+                      <input id="mm-sender" className="input" value={docFields.senderName} onChange={(e) => setDoc("senderName", e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                {docType === "memo" && (
+                  <div className="field">
+                    <label className="field-label" htmlFor="mm-body">เนื้อหา</label>
+                    <textarea
+                      id="mm-body"
+                      className="textarea"
+                      style={{ minHeight: 120 }}
+                      value={docFields.body}
+                      onChange={(e) => setDoc("body", e.target.value)}
+                    />
                   </div>
                 )}
               </div>
