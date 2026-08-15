@@ -48,13 +48,14 @@ class Settings(BaseSettings):
     # Bearer token required on every /api/* route (except /health).
     # CHANGE THIS in production — dev default is deliberate and loud.
     api_token: str = "dev-secret-change-me"
-    # LLM mode: mock / auto / anthropic / openai (read by app/llm.py)
+    # LLM mode: mock / auto / anthropic / openai / gemini / groq / openrouter
+    # (read by app/llm.py)
     llm: str = "mock"
     # Approved LLM providers (comma-separated, env SOLVEN_APPROVED_LLM_PROVIDERS).
     # Production rejects SOLVEN_LLM values not on this list (AUD-C-04 / T0-04).
     approved_llm_providers: Annotated[
         list[str], NoDecode, BeforeValidator(_split_list)
-    ] = ["mock", "anthropic", "openai", "auto"]
+    ] = ["mock", "anthropic", "openai", "gemini", "groq", "openrouter", "auto"]
     # requests allowed per IP per minute
     rate_limit_per_min: int = 60
     # comma-separated list of allowed browser origins (env: SOLVEN_CORS_ORIGINS)
@@ -115,8 +116,18 @@ class Settings(BaseSettings):
             problems.append("production SOLVEN_LLM=anthropic requires ANTHROPIC_API_KEY")
         if self.llm == "openai" and not os.environ.get("OPENAI_API_KEY"):
             problems.append("production SOLVEN_LLM=openai requires OPENAI_API_KEY")
+        if self.llm == "gemini" and not os.environ.get("GEMINI_API_KEY"):
+            problems.append("production SOLVEN_LLM=gemini requires GEMINI_API_KEY")
+        if self.llm == "groq" and not os.environ.get("GROQ_API_KEY"):
+            problems.append("production SOLVEN_LLM=groq requires GROQ_API_KEY")
+        if self.llm == "openrouter" and not os.environ.get("OPENROUTER_API_KEY"):
+            problems.append("production SOLVEN_LLM=openrouter requires OPENROUTER_API_KEY")
         if self.llm == "auto" and not (
-            os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+            os.environ.get("ANTHROPIC_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or os.environ.get("GEMINI_API_KEY")
+            or os.environ.get("GROQ_API_KEY")
+            or os.environ.get("OPENROUTER_API_KEY")
         ):
             problems.append("production SOLVEN_LLM=auto requires at least one provider key")
         if not self.database_url or "localhost" in self.database_url or "127.0.0.1" in self.database_url:

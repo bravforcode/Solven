@@ -53,8 +53,14 @@ def test_check_catches_env_errors_via_settings_construction(monkeypatch):
 
 
 def test_check_rejects_missing_provider_key(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    for key in (
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+        "OPENROUTER_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
     s = Settings(env="dev", api_token="x" * 40, cors_origins=["https://app.example.com"], llm="auto")
     msgs = check(s, site_url="https://app.example.com")
     assert any("provider key" in m for m in msgs)

@@ -85,7 +85,7 @@ def make_coordinator(store: Store, fail_closed: bool = False):
             provider_rubric = redact_pii(state.get("rubric") or "") or None
         try:
             output = run_sub_agent(llm, state["agent"], provider_input, provider_rubric)
-        except httpx.HTTPStatusError:
+        except (httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException):
             if fail_closed:
                 raise FailClosedError(
                     "LLM provider rejected the request (HTTP error); refusing to "
@@ -100,6 +100,7 @@ def make_coordinator(store: Store, fail_closed: bool = False):
             model = fallback.model
             run_status = "fallback-mock"
         latency_ms = int((time.perf_counter() - start) * 1000)
+        usage = getattr(llm, "last_usage", None) or {}
         store.add_run(
             {
                 "id": str(uuid.uuid4()),
@@ -113,8 +114,9 @@ def make_coordinator(store: Store, fail_closed: bool = False):
                 "cost_estimate": 0.0 if model.startswith("mock") else 0.001,
                 "guardrail_passed": 0,  # set after guardrail node
                 "created_at": _now(),
-            },
-            org_id=state.get("org_id"),
+                "input_tokens": usage.get("input_tokens"),
+                "output_tokens": usage.get("output_tokens"),
+            }
         )
         return {
             **state,

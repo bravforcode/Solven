@@ -30,15 +30,15 @@
 
 | ข้อ | P | สถานะ | หมายเหตุ |
 |---|---|---|---|
-| Provider abstraction | P0 | ✅ | `LLMClient` ABC + Mock/Anthropic/OpenAI/auto |
-| Gemini/Groq/OpenRouter adapter | P1 | ⬜ | Plan B workstream |
+| Provider abstraction | P0 | ✅ | `LLMClient` ABC + Mock/Anthropic/OpenAI/Gemini/Groq/OpenRouter/auto |
+| Gemini/Groq/OpenRouter adapter | P1 | ✅ | Gemini generateContent; Groq/OpenRouter = OpenAI-compatible base |
 | Streaming | P1 | ⬜ | — |
 | Structured output (schema-validate) | P1 | 🔶 | guardrail regex + score format check; ยังไม่ Pydantic-parse เต็ม |
-| Timeout / retry | P0 | ✅ | timeout 60s; retry×2 (guardrail); provider retry ⬜ |
+| Timeout / retry | P0 | ✅ | timeout 60s; provider retry×2 + backoff (4xx ไม่ retry); guardrail retry×2 |
 | Rate limiting | P0 | ✅ | per-IP 60/min (in-memory) |
-| Usage logging | P0 | ✅ | agent_runs: model/hash/latency/status; token จริง ⬜ |
+| Usage logging | P0 | ✅ | agent_runs: model/hash/latency/status + **input/output tokens** (migration 004) |
 | Mock provider | P0 | ✅ | deterministic Thai |
-| Provider error normalization | P1 | 🔶 | fail-closed 502 + fallback-mock (dev only) |
+| Provider error normalization | P1 | ✅ | fail-closed 502 + fallback-mock (dev only); connect/timeout/HTTP ปกติทั้งหมด |
 
 ## 3. Safety & Education Quality
 
@@ -74,7 +74,7 @@
 | E2E (Playwright) | P1 | ✅ 4 smoke tests (demo mode, CI) — workflow create→approve→docs |
 | Sentry | P1 | ⬜ |
 | Structured logs + request-id | P0 | ✅ |
-| AI latency/token | P1 | 🔶 latency ✅ / token ⬜ |
+| AI latency/token | P1 | ✅ latency + input/output tokens ใน agent_runs |
 
 ## 6. Deployment
 

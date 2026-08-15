@@ -155,12 +155,13 @@ class Store:
         with self._c() as conn:
             conn.execute(
                 "INSERT INTO agent_runs (id, task_id, agent, model, prompt_hash, output_hash, status, "
-                "latency_ms, cost_estimate, guardrail_passed, created_at, org_id) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "latency_ms, cost_estimate, guardrail_passed, created_at, org_id, input_tokens, output_tokens) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (run["id"], run["task_id"], run["agent"], run["model"], run["prompt_hash"],
                  run["output_hash"], run["status"], run["latency_ms"], run["cost_estimate"],
                  1 if run["guardrail_passed"] else 0, run["created_at"],
-                 org_id if org_id is not None else run.get("org_id")),
+                 org_id if org_id is not None else run.get("org_id"),
+                 run.get("input_tokens"), run.get("output_tokens")),
             )
 
     def list_runs(self, task_id: Optional[str] = None,

@@ -43,7 +43,7 @@
 
 | Gap | ความเสี่ยง | แผน |
 |---|---|---|
-| LLM: ไม่มี Gemini/Groq/OpenRouter adapter, ไม่มี streaming/structured-output | Medium | Plan B (ADR-008) |
+| LLM streaming + full structured-output parsing | Low | post-hackathon (grading มี score-schema regex check แล้ว) |
 | ไม่มี RAG/document-ingestion | ไม่กระทบ demo | ADR-006 defer |
 | Frontend tests | ✅ ปิดแล้ว 15 ส.ค. — Vitest 36 unit + Playwright E2E 4 smoke (demo mode) ใน CI | — |
 | Next 14 (advisories ต้องอัป next@15) | Low-Medium | แยก branch + browser regression หลัง hackathon |
