@@ -63,8 +63,32 @@ class Store:
     def __init__(self, database_url: str = ""):
         self._database_url = database_url or DB_URL_DEFAULT
 
-    def _c(self) -> psycopg.Connection:
-        return _conn(self._database_url)
+    def _c(
+        self,
+        org_id: Optional[str] = None,
+        platform: bool = False,
+    ) -> psycopg.Connection:
+        """Connection with the tenant RLS scope applied (migration 005).
+
+        RLS makes an unscoped session fail closed (0 rows for tenant data),
+        so every tenant-scoped method must open its connection with the
+        org it is operating on:
+
+        * ``org_id`` set  -> ``SET app.current_org_id`` on that session;
+          the policy allows rows of that org (and NULL/demo rows).
+        * ``platform``    -> 'platform' scope — trusted cross-tenant
+          operations ONLY (retention purge, rollup jobs, super-admin tasks).
+        * neither         -> unscoped: only NULL-org (demo/legacy) rows are
+          visible, so dev mode keeps working without a tenant.
+        """
+        conn = _conn(self._database_url)
+        if platform:
+            # set_config(name, value, is_local): function call — accepts bound
+            # parameters (plain `SET x = %s` does not, $1 is a syntax error).
+            conn.execute("SELECT set_config('app.current_org_id', 'platform', false)")
+        elif org_id:
+            conn.execute("SELECT set_config('app.current_org_id', %s, false)", (org_id,))
+        return conn
 
     # ---- tasks ----
     def create_task(
@@ -79,7 +103,7 @@ class Store:
         """Insert a task. Returns False (no-op) if task_id already exists —
         lets callers detect a replayed request (offline-queue retry) and skip
         re-running the agent instead of duplicating work."""
-        with self._c() as conn:
+        with self._c(org_id=org_id) as conn:
             cur = conn.execute(
                 "INSERT INTO tasks (id, teacher_id, agent, input, state, created_at, org_id) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s) "
@@ -88,13 +112,13 @@ class Store:
             )
         return cur.rowcount > 0
 
-    def get_task(self, task_id: str) -> Optional[dict]:
-        with self._c() as conn:
+    def get_task(self, task_id: str, org_id: Optional[str] = None) -> Optional[dict]:
+        with self._c(org_id=org_id) as conn:
             row = conn.execute("SELECT * FROM tasks WHERE id=%s", (task_id,)).fetchone()
         return row if row else None
 
-    def set_task_state(self, task_id: str, state: str) -> None:
-        with self._c() as conn:
+    def set_task_state(self, task_id: str, state: str, org_id: Optional[str] = None) -> None:
+        with self._c(org_id=org_id) as conn:
             conn.execute("UPDATE tasks SET state=%s WHERE id=%s", (state, task_id))
 
     # ---- drafts ----
@@ -110,7 +134,7 @@ class Store:
         status: str = "pending",
         org_id: Optional[str] = None,
     ) -> None:
-        with self._c() as conn:
+        with self._c(org_id=org_id) as conn:
             conn.execute(
                 "INSERT INTO drafts (id, task_id, teacher_id, agent, input, output, status, warnings, created_at, org_id) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
@@ -121,7 +145,7 @@ class Store:
     def list_drafts(self, teacher_id: Optional[str] = None,
                     org_id: Optional[str] = None,
                     limit: int = 100, offset: int = 0) -> list[dict]:
-        with self._c() as conn:
+        with self._c(org_id=org_id) as conn:
             clauses, params = [], []
             if teacher_id:
                 clauses.append("teacher_id=%s")
@@ -136,13 +160,13 @@ class Store:
             ).fetchall()
         return rows
 
-    def get_draft(self, draft_id: str) -> Optional[dict]:
-        with self._c() as conn:
+    def get_draft(self, draft_id: str, org_id: Optional[str] = None) -> Optional[dict]:
+        with self._c(org_id=org_id) as conn:
             row = conn.execute("SELECT * FROM drafts WHERE id=%s", (draft_id,)).fetchone()
         return row if row else None
 
-    def set_draft_status(self, draft_id: str, status: str) -> Optional[dict]:
-        with self._c() as conn:
+    def set_draft_status(self, draft_id: str, status: str, org_id: Optional[str] = None) -> Optional[dict]:
+        with self._c(org_id=org_id) as conn:
             cur = conn.execute("UPDATE drafts SET status=%s, reviewed_at=%s WHERE id=%s",
                                (status, now_iso(), draft_id))
             if cur.rowcount == 0:
@@ -152,7 +176,7 @@ class Store:
 
     # ---- agent_runs (audit) ----
     def add_run(self, run: dict, org_id: Optional[str] = None) -> None:
-        with self._c() as conn:
+        with self._c(org_id=org_id) as conn:
             conn.execute(
                 "INSERT INTO agent_runs (id, task_id, agent, model, prompt_hash, output_hash, status, "
                 "latency_ms, cost_estimate, guardrail_passed, created_at, org_id, input_tokens, output_tokens) "
@@ -165,8 +189,9 @@ class Store:
             )
 
     def list_runs(self, task_id: Optional[str] = None,
-                  limit: int = 100, offset: int = 0) -> list[dict]:
-        with self._c() as conn:
+                  limit: int = 100, offset: int = 0,
+                  org_id: Optional[str] = None) -> list[dict]:
+        with self._c(org_id=org_id) as conn:
             if task_id:
                 rows = conn.execute(
                     "SELECT * FROM agent_runs WHERE task_id=%s ORDER BY created_at LIMIT %s OFFSET %s",
@@ -183,7 +208,7 @@ class Store:
                               org_id: Optional[str] = None,
                               limit: int = 100, offset: int = 0) -> list[dict]:
         """Audit runs scoped to one teacher via the owning task (AUD-H-01 / I2)."""
-        with self._c() as conn:
+        with self._c(org_id=org_id) as conn:
             if org_id:
                 rows = conn.execute(
                     "SELECT r.* FROM agent_runs r "
@@ -263,9 +288,9 @@ class Store:
         return cur.rowcount > 0
 
     # ---- lifecycle (AUD-H-09 / T1-09) ----
-    def delete_draft(self, draft_id: str) -> bool:
+    def delete_draft(self, draft_id: str, org_id: Optional[str] = None) -> bool:
         """Scoped deletion (subject/tenant data-rights request)."""
-        with self._c() as conn:
+        with self._c(org_id=org_id) as conn:
             cur = conn.execute("DELETE FROM drafts WHERE id=%s", (draft_id,))
         return cur.rowcount > 0
 
@@ -273,11 +298,14 @@ class Store:
         """Delete drafts older than the retention window, their tasks and audit
         runs, PLUS crash-orphaned tasks (created before the cutoff with no draft
         at all — e.g. a worker died mid-run). ISO UTC timestamps compare
-        lexicographically. Returns the number of drafts purged."""
+        lexicographically. Returns the number of drafts purged.
+
+        Platform-scoped (RLS 'platform'): retention spans ALL tenants.
+        """
         import datetime as _dt
 
         cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=retention_days)).isoformat()
-        with self._c() as conn:
+        with self._c(platform=True) as conn:
             expired = conn.execute(
                 "SELECT id, task_id FROM drafts WHERE created_at < %s", (cutoff,)
             ).fetchall()

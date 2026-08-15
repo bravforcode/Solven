@@ -190,7 +190,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if body.status not in ("approved", "rejected"):
             raise HTTPException(400, "invalid status")
         principal = principal_from(request, settings)
-        row = store.get_draft(draft_id)
+        row = store.get_draft(draft_id, org_id=principal["tenant"])
         if not row:
             raise HTTPException(404, "not found")
         # ownership check: a teacher can only review their own org's drafts
@@ -199,7 +199,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             or row.get("org_id") != principal["tenant"]
         ):
             raise HTTPException(403, "not your draft")
-        updated = store.set_draft_status(draft_id, body.status)
+        updated = store.set_draft_status(draft_id, body.status, org_id=principal["tenant"])
         if not updated:
             raise HTTPException(404, "not found")
         return _to_out(updated)
@@ -208,7 +208,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def delete_draft(draft_id: str, request: Request) -> dict:
         """Scoped deletion (PDPA data-rights / AUD-H-09). Owner-only in production."""
         principal = principal_from(request, settings)
-        row = store.get_draft(draft_id)
+        row = store.get_draft(draft_id, org_id=principal["tenant"])
         if not row:
             raise HTTPException(404, "not found")
         if settings.env == "production" and (
@@ -216,7 +216,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             or row.get("org_id") != principal["tenant"]
         ):
             raise HTTPException(403, "not your draft")
-        store.delete_draft(draft_id)
+        store.delete_draft(draft_id, org_id=principal["tenant"])
         return {"deleted": draft_id}
 
     @app.post("/api/demo/seed", dependencies=[require_token], tags=["demo"])

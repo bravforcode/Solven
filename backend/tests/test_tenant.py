@@ -104,10 +104,12 @@ def test_production_same_teacher_cross_org_cannot_act(monkeypatch, db_url, store
         json={"status": "approved"},
         headers=_auth("teacher-a", "org-2"),
     )
-    assert r.status_code == 403
+    # RLS makes the cross-org row invisible: 404 (row not found) or 403
+    # (ownership check) — both fail closed, never data (Task 19 Step 2).
+    assert r.status_code in (403, 404), r.text
 
     r = client.delete(f"/api/drafts/{d['id']}", headers=_auth("teacher-a", "org-2"))
-    assert r.status_code == 403
+    assert r.status_code in (403, 404), r.text
 
     # same teacher, same org → allowed
     r = client.patch(
@@ -225,3 +227,93 @@ def test_dev_mode_uses_demo_teacher_without_header(db_url, store):
     assert r.status_code == 200
     r = client.get("/api/drafts", headers={"Authorization": "Bearer test-token"})
     assert r.status_code == 200
+
+
+# ---- RLS defense-in-depth (migration 005) ----
+# The app-level scoping tests above prove the code path is correct; these
+# prove the DATABASE fails closed even when application filtering is bypassed.
+# They connect as `solven_app` (non-superuser role created by migration 005):
+# RLS is BYPASSED for superusers by Postgres design, so superuser connections
+# cannot prove anything about RLS. Local compose runs as superuser (dormant
+# RLS); production must use a non-superuser role — which these tests enforce.
+
+RLS_APP_URL = "postgresql://solven_app:solven_app@localhost:5432/solven_test"
+
+
+def test_rls_raw_query_cannot_cross_tenants(monkeypatch, db_url, store, prod_db_url):
+    """A raw SQL query (no app-level WHERE) must still be tenant-isolated:
+    RLS fail-closes on the session scope."""
+    import os
+
+    import psycopg
+    from psycopg.rows import dict_row
+
+    app_url = os.environ.get("SOLVEN_TEST_DATABASE_URL", db_url).replace(
+        "solven:solven@", "solven_app:solven_app@"
+    )
+
+    client = TestClient(_prod_app(monkeypatch, db_url, store, prod_db_url))
+    d = _submit(client, "teacher-a", tenant="org-a").json()
+    assert d["id"]
+
+    # scoped as org-b: org-a's draft is invisible even without a WHERE clause
+    with psycopg.connect(app_url, row_factory=dict_row) as conn:
+        conn.execute("SET app.current_org_id = 'org-b'")
+        rows = conn.execute("SELECT * FROM drafts").fetchall()
+    assert all(r["org_id"] == "org-b" for r in rows)
+    assert d["id"] not in [r["id"] for r in rows]
+
+    # unscoped: only NULL-org demo rows, never org-a's
+    with psycopg.connect(app_url, row_factory=dict_row) as conn:
+        rows = conn.execute("SELECT * FROM drafts").fetchall()
+    assert all(r["org_id"] is None for r in rows)
+    assert d["id"] not in [r["id"] for r in rows]
+
+    # scoped as org-a: visible
+    with psycopg.connect(app_url, row_factory=dict_row) as conn:
+        conn.execute("SET app.current_org_id = 'org-a'")
+        rows = conn.execute("SELECT * FROM drafts").fetchall()
+    assert d["id"] in [r["id"] for r in rows]
+
+
+def test_rls_write_requires_matching_scope(db_url, store):
+    """WITH CHECK: inserting an org-scoped row without the matching session
+    scope is rejected by the database itself (42501), not by application code."""
+    import os
+
+    import psycopg
+    from psycopg.rows import dict_row
+
+    app_url = os.environ.get("SOLVEN_TEST_DATABASE_URL", db_url).replace(
+        "solven:solven@", "solven_app:solven_app@"
+    )
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with psycopg.connect(app_url, row_factory=dict_row) as conn:
+            conn.execute(
+                "INSERT INTO drafts (id, task_id, agent, input, output, status, warnings, created_at, org_id) "
+                "VALUES ('rls-bad', 't-bad', 'grading', 'in', 'out', 'pending', '[]', "
+                "'2026-01-01T00:00:00+00:00', 'org-zzz')"
+            )
+
+
+def test_rls_platform_scope_sees_all_tenants(monkeypatch, db_url, store, prod_db_url):
+    """Platform operations (retention purge, rollups) legitimately cross
+    tenants via the explicit 'platform' scope."""
+    import os
+
+    import psycopg
+    from psycopg.rows import dict_row
+
+    app_url = os.environ.get("SOLVEN_TEST_DATABASE_URL", db_url).replace(
+        "solven:solven@", "solven_app:solven_app@"
+    )
+
+    client = TestClient(_prod_app(monkeypatch, db_url, store, prod_db_url))
+    _submit(client, "teacher-a", tenant="org-a")
+    _submit(client, "teacher-b", tenant="org-b")
+
+    with psycopg.connect(app_url, row_factory=dict_row) as conn:
+        conn.execute("SET app.current_org_id = 'platform'")
+        rows = conn.execute("SELECT * FROM drafts").fetchall()
+    assert len(rows) >= 2

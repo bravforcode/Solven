@@ -116,7 +116,8 @@ def make_coordinator(store: Store, fail_closed: bool = False):
                 "created_at": _now(),
                 "input_tokens": usage.get("input_tokens"),
                 "output_tokens": usage.get("output_tokens"),
-            }
+            },
+            org_id=state.get("org_id"),
         )
         return {
             **state,
@@ -127,7 +128,7 @@ def make_coordinator(store: Store, fail_closed: bool = False):
     def guardrail_node(state: CoordState) -> CoordState:
         passed, warnings = guardrail.check(state["output"], state["input"], state["agent"])
         # update audit row guardrail flag (latest run for this task)
-        with store._c() as conn:
+        with store._c(org_id=state.get("org_id")) as conn:
             conn.execute(
                 "UPDATE agent_runs SET guardrail_passed=%s WHERE task_id=%s AND created_at=(SELECT MAX(created_at) FROM agent_runs WHERE task_id=%s)",
                 (1 if passed else 0, state["task_id"], state["task_id"]),
@@ -163,7 +164,7 @@ def make_coordinator(store: Store, fail_closed: bool = False):
             status=status,
             org_id=state.get("org_id"),
         )
-        store.set_task_state(state["task_id"], "draft_ready")
+        store.set_task_state(state["task_id"], "draft_ready", org_id=state.get("org_id"))
         return {}
 
     g = StateGraph(CoordState)
@@ -205,7 +206,7 @@ def run_task(
         existing = [d for d in store.list_drafts(teacher_id=teacher_id, org_id=org_id) if d["task_id"] == task_id]
         if existing:
             return existing[0]
-        task = store.get_task(task_id)
+        task = store.get_task(task_id, org_id=org_id)
         if task and task.get("teacher_id") != teacher_id:
             raise TaskNotOwnedError(
                 "client_task_id already used by another teacher (replay refused)"
