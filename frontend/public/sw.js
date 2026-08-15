@@ -1,11 +1,16 @@
 // Minimal service worker — caches the app shell so the demo opens on
 // slow/flaky connections (offline-first direction, Appendix A.8).
-const CACHE = "solven-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
+// v2 (2026-08-15): bumped cache name + network-first shell so redeploys are
+// never stuck behind a stale cached HTML/CSS (the "broken CSS" symptom).
+const CACHE = "solven-v2";
+const SHELL = ["/", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())
+    caches
+      .open(CACHE)
+      .then((c) => Promise.all(SHELL.map((url) => c.add(url).catch(() => null))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -36,8 +41,18 @@ self.addEventListener("fetch", (event) => {
     );
     return;
   }
+  // Navigations / shell: NETWORK FIRST, cache fallback — fresh app shell on
+  // every visit, offline still works. Prevents stale-CSS-on-redeploy.
   event.respondWith(
-    caches.match(event.request).then((hit) => hit || fetch(event.request))
+    fetch(event.request)
+      .then((res) => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(event.request, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
 
