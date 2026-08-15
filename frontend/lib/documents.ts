@@ -202,13 +202,24 @@ export function buildSummaryReportHtml(s: SchoolInfo, drafts: Draft[]): string {
 /**
  * Print a document: inject html into a body-level #print-root, print, clean up.
  * Works offline; backend not involved.
+ *
+ * `landscape` injects an explicit `@page { size: A4 landscape }` rule —
+ * named-page (`page: landscape`) is Chromium-only, so Firefox/Safari need the
+ * size rule to rotate certificate pages.
  */
-export function printDocument(html: string): void {
+export interface PrintOptions {
+  landscape?: boolean;
+}
+
+export function printDocument(html: string, opts: PrintOptions = {}): void {
   const old = document.getElementById("print-root");
   if (old) old.remove();
   const root = document.createElement("div");
   root.id = "print-root";
-  root.innerHTML = html;
+  const pageRule = opts.landscape
+    ? `<style>@page { size: A4 landscape; margin: 0; }</style>`
+    : `<style>@page { size: A4 portrait; margin: 0; }</style>`;
+  root.innerHTML = pageRule + html;
   document.body.appendChild(root);
   const cleanup = () => {
     root.remove();

@@ -409,7 +409,7 @@ export default function Home() {
       pushToast("info", "ยังไม่มีงานที่อนุมัติให้พิมพ์สรุป");
       return;
     }
-    printDocument(docHtml);
+    printDocument(docHtml, { landscape: docType === "certificate" });
   }
 
   async function downloadPdf() {
