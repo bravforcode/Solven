@@ -27,7 +27,8 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  output: "standalone",
+  // NOTE: output: "standalone" is for Docker/self-hosted, NOT Vercel.
+  // Vercel handles its own build output; standalone causes CSS/JS asset issues.
   poweredByHeader: false,
   async headers() {
     return [
