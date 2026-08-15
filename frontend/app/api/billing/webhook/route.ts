@@ -41,6 +41,7 @@ export async function POST(req: Request) {
       "Content-Type": "application/json",
       ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
     },
+    signal: AbortSignal.timeout(10000),
     body: JSON.stringify({
       event_id: event.id,
       type: event.type,

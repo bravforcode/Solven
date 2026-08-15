@@ -24,13 +24,17 @@ export async function POST() {
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const checkout = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
-    client_reference_id: principal.tenant,
-    subscription_data: { metadata: { org_id: principal.tenant, plan: "pro" } },
-    success_url: `${siteUrl}/org?billing=success`,
-    cancel_url: `${siteUrl}/org?billing=canceled`,
-  });
-  return NextResponse.json({ url: checkout.url });
+  try {
+    const checkout = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      client_reference_id: principal.tenant,
+      subscription_data: { metadata: { org_id: principal.tenant, plan: "pro" } },
+      success_url: `${siteUrl}/org?billing=success`,
+      cancel_url: `${siteUrl}/org?billing=canceled`,
+    });
+    return NextResponse.json({ url: checkout.url });
+  } catch {
+    return NextResponse.json({ error: "stripe unavailable" }, { status: 502 });
+  }
 }
