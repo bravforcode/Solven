@@ -19,7 +19,10 @@ TEST_DB_URL = os.environ.get(
 # default (compose) URL.
 os.environ["SOLVEN_DATABASE_URL"] = TEST_DB_URL
 
-_DATA_TABLES = ("tasks", "drafts", "agent_runs")
+_DATA_TABLES = (
+    "tasks", "drafts", "agent_runs",
+    "orgs", "org_members", "subscriptions", "usage_counters", "stripe_events",
+)
 
 
 @pytest.fixture()

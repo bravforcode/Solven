@@ -57,6 +57,12 @@ def test_migration_failure_is_atomic(tmp_path, db_url):
     names = {r["name"] for r in conn.execute("SELECT name FROM schema_migrations")}
     assert "002_bad.sql" not in names
     conn.close()
+    # cleanup: the scratch 001_ok.sql was committed into the shared tracker —
+    # remove it so later runs of test_applies_migrations_in_order stay green
+    c = psycopg.connect(db_url, row_factory=dict_row)
+    c.execute("DELETE FROM schema_migrations WHERE name='001_ok.sql'")
+    c.commit()
+    c.close()
 
 
 def test_indexes_created(conn):
@@ -70,6 +76,27 @@ def test_indexes_created(conn):
     }
     assert "idx_agent_runs_task_id" in names
     assert "idx_drafts_status" in names
+
+
+def test_003_orgs_billing_applied(conn):
+    """003 creates org/billing tables and adds org_id to the data tables."""
+    apply_migrations(conn)
+    tables = {
+        r["table_name"]
+        for r in conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+        ).fetchall()
+    }
+    for t in ("orgs", "org_members", "subscriptions", "usage_counters", "stripe_events"):
+        assert t in tables
+    for t in ("tasks", "drafts", "agent_runs"):
+        cols = {
+            r["column_name"]
+            for r in conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name=%s", (t,)
+            ).fetchall()
+        }
+        assert "org_id" in cols
 
 
 def test_migrations_fail_loudly_on_bad_sql(tmp_path, db_url):
