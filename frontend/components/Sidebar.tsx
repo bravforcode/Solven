@@ -98,49 +98,65 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string }[] }[] 
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const flat = NAV_GROUPS.flatMap((g) => g.items);
   return (
-    <aside className="sidebar">
-      <div className="sidebar-brand">
-        <span className="logo">S</span>
-        <span className="brand-name">Solven</span>
-      </div>
-      <nav className="sidebar-nav" aria-label="ส่วนหลัก">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.label} style={{ marginBottom: 10 }}>
-            <div
-              style={{
-                fontSize: "0.68rem",
-                color: "var(--muted, #6b7280)",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                padding: "6px 10px 2px",
-              }}
-            >
-              {group.label}
-            </div>
-            {group.items.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`sidebar-link${pathname === item.href ? " sidebar-link-active" : ""}`}
+    <>
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <span className="logo">S</span>
+          <span className="brand-name">Solven</span>
+        </div>
+        <nav className="sidebar-nav" aria-label="ส่วนหลัก">
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label} style={{ marginBottom: 10 }}>
+              <div
+                style={{
+                  fontSize: "0.68rem",
+                  color: "var(--muted, #6b7280)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  padding: "6px 10px 2px",
+                }}
               >
-                {item.label}
-              </Link>
-            ))}
-          </div>
+                {group.label}
+              </div>
+              {group.items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`sidebar-link${pathname === item.href ? " sidebar-link-active" : ""}`}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <Link href="/status" className="sidebar-link">
+            สถานะระบบ
+          </Link>
+          <Link href="/settings" className="sidebar-link">
+            ตั้งค่าโรงเรียน
+          </Link>
+          <Link href="/about" className="sidebar-link">
+            เกี่ยวกับโปรเจกต์
+          </Link>
+        </div>
+      </aside>
+      {/* Mobile: horizontal scrollable nav (CSS shows this only ≤900px) */}
+      <nav className="mobile-nav" aria-label="ส่วนหลัก (มือถือ)">
+        {flat.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`nav-item${pathname === item.href ? " nav-item-active" : ""}`}
+            style={{ textDecoration: "none" }}
+          >
+            {item.label}
+          </Link>
         ))}
       </nav>
-      <div className="sidebar-foot">
-        <Link href="/status" className="sidebar-link">
-          สถานะระบบ
-        </Link>
-        <Link href="/settings" className="sidebar-link">
-          ตั้งค่าโรงเรียน
-        </Link>
-        <Link href="/about" className="sidebar-link">
-          เกี่ยวกับโปรเจกต์
-        </Link>
-      </div>
-    </aside>
+    </>
   );
 }

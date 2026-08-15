@@ -128,6 +128,19 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: var(--line, #e5e7eb);
+  border-radius: 2px;
 }
 
 .nav-item {
@@ -1051,6 +1064,9 @@ button:disabled {
 
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
+  .shell {
+    flex-wrap: wrap;
+  }
   .sidebar {
     display: none;
   }
@@ -1058,6 +1074,14 @@ button:disabled {
     display: flex;
     gap: 6px;
     padding: 14px 16px 0;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    order: -1;
+    width: 100%;
+  }
+  .mobile-nav::-webkit-scrollbar {
+    display: none;
   }
   .mobile-nav .nav-item {
     background: var(--surface);
@@ -1066,8 +1090,11 @@ button:disabled {
     padding: 6px 14px;
     width: auto;
     font-size: 0.84rem;
+    white-space: nowrap;
+    flex: none;
   }
-  .mobile-nav .nav-item[aria-pressed="true"] {
+  .mobile-nav .nav-item[aria-pressed="true"],
+  .mobile-nav .nav-item-active {
     background: var(--ink);
     border-color: var(--ink);
     color: #fff;
