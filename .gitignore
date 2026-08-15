@@ -16,3 +16,9 @@ C:*Users*opencode*
 
 # local QA artifacts (browser automation)
 .qa/
+.vercel
+
+# local tool artifacts
+.freebuff/
+Meta/
+/vercel.json
