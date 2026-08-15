@@ -32,6 +32,21 @@ def test_escape_helper_escapes_markup():
     assert _esc('a "b" c') == "a &quot;b&quot; c"
 
 
+def test_font_covers_required_glyphs():
+    """REVIEW R2 (font HIGH): the vendored font must cover every glyph the
+    templates render — digits, Thai base+marks, Latin, punctuation. A subset
+    font (digits missing) renders blanks in dates/class/ref numbers and the
+    previous b'NotoSansThai' assertion could never catch it."""
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    from app.documents import _FONT_PATH
+
+    font = TTFont("Coverage", str(_FONT_PATH))
+    cmap = font.face.charToGlyph
+    for ch in "0123456789ABCabcกขคงจฉชซดดีใจคณิตศาสตร์่้๊๋ิีึืุู-_()./:—· ":
+        assert cmap.get(ord(ch), 0), f"missing glyph for {ch!r} (U+{ord(ch):04X})"
+
+
 def test_render_worksheet_returns_pdf(client):
     r = client.post(
         "/api/documents/render",

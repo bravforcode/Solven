@@ -271,8 +271,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def render_doc(body: DocumentRenderRequest):
         from fastapi.responses import Response
 
-        # REVIEW F2: bounded payload (memory/DoS guard) — 200KB is generous
-        # for a Thai school document form.
+        # REVIEW F2: soft cap — Starlette parses the body before this check;
+        # the BFF enforces a pre-parse content-length guard for the browser
+        # path. Direct backend callers are token-gated + rate-limited.
         if len(body.model_dump_json()) > 200_000:
             raise HTTPException(413, "payload too large")
         try:
