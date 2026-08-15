@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import Sidebar from "@/components/Sidebar";
 import { loadSchool, saveSchool, SCHOOL_DEFAULTS, SchoolInfo } from "@/lib/school";
 // REVIEW PASS 2: layout.tsx already wraps every page in ToastProvider —
 // consume useToast() directly, do NOT add a second provider
@@ -41,17 +42,7 @@ function SettingsForm() {
 
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <span className="logo">S</span>
-          <span className="brand-name">Solven</span>
-        </div>
-        <nav className="sidebar-nav" aria-label="ส่วนหลัก">
-          <Link href="/" className="sidebar-link">
-            ← กลับไปแดชบอร์ด
-          </Link>
-        </nav>
-      </aside>
+      <Sidebar />
       <div className="main-col">
         <header className="topbar">
           <div>

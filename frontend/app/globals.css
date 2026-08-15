@@ -46,6 +46,7 @@ body {
   color: var(--ink);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 :focus-visible {
@@ -1076,12 +1077,17 @@ button:disabled {
   .mobile-nav {
     display: flex;
     gap: 6px;
-    padding: 14px 16px 0;
+    padding: 10px 16px;
     overflow-x: auto;
     flex-wrap: nowrap;
     scrollbar-width: none;
     order: -1;
     width: 100%;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
   }
   .mobile-nav::-webkit-scrollbar {
     display: none;

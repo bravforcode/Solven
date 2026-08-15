@@ -6,7 +6,7 @@
 // served stale JS chunks against fresh HTML (hydration mismatch "Expected
 // server HTML to contain a matching <span>"). Network-first with cache
 // fallback keeps offline support while guaranteeing chunk freshness.
-const CACHE = "solven-v3";
+const CACHE = "solven-v4";
 const SHELL = ["/", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
