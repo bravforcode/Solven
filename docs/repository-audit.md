@@ -45,6 +45,6 @@
 |---|---|---|
 | LLM: ไม่มี Gemini/Groq/OpenRouter adapter, ไม่มี streaming/structured-output | Medium | Plan B (ADR-008) |
 | ไม่มี RAG/document-ingestion | ไม่กระทบ demo | ADR-006 defer |
-| ไม่มี frontend behavioral tests (Vitest/Playwright) | Medium | workstream นี้ |
+| Frontend tests | ✅ ปิดแล้ว 15 ส.ค. — Vitest 36 unit + Playwright E2E 4 smoke (demo mode) ใน CI | — |
 | Next 14 (advisories ต้องอัป next@15) | Low-Medium | แยก branch + browser regression หลัง hackathon |
 | Rate-limit in-memory (ไม่รองรับ multi-instance) | Low (pilot) | Redis เมื่อ scale |

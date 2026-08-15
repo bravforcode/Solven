@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { patchDraft } from "@/lib/backend";
+import { listBackendDrafts, patchDraft } from "@/lib/backend";
 import { isDemoMode, requirePrincipal } from "@/lib/bffAuth";
 import { listDrafts, updateDraftStatus } from "@/lib/store";
 import { DraftStatus } from "@/lib/types";
@@ -21,8 +21,42 @@ export async function PATCH(
 
   const existing = listDrafts().find((d) => d.id === params.id);
   if (!existing) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    // Backend-sourced drafts (engine === "backend") are merged into GET
+    // /api/drafts but never mirrored into the local store — resolve them via
+    // the authoritative backend. Without this, reviewing any backend draft
+    // 404s and the production review queue is broken (E2E-caught bug).
+    let backendDraft: Awaited<ReturnType<typeof listBackendDrafts>>[number] | undefined;
+    try {
+      backendDraft = (await listBackendDrafts(guard.principal)).find(
+        (d) => d.id === params.id
+      );
+    } catch {
+      backendDraft = undefined;
+    }
+    if (!backendDraft) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+    if (!isDemoMode() && backendDraft.teacherId !== guard.principal.teacherId) {
+      return NextResponse.json({ error: "not your draft" }, { status: 403 });
+    }
+    // The backend PATCH accepts final states only — "pending" (undo) is not
+    // supported for backend rows; the backend itself enforces ownership too.
+    if (status === "pending") {
+      return NextResponse.json(
+        { error: "undo is not supported for backend drafts" },
+        { status: 400 }
+      );
+    }
+    const ok = await patchDraft(backendDraft.id, status, guard.principal);
+    if (!ok) {
+      return NextResponse.json(
+        { error: "backend unavailable" },
+        { status: 502 }
+      );
+    }
+    return NextResponse.json({ ...backendDraft, status });
   }
+
   // AUD-H-01: ownership — a teacher can only review their own drafts.
   // Untagged drafts are reviewable by the demo identity only.
   if (!isDemoMode() && existing.teacherId !== guard.principal.teacherId) {

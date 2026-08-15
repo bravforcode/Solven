@@ -41,7 +41,7 @@ jobs:
         run: python -m pytest tests -q
 
   frontend:
-    name: Frontend (lint + typecheck + build)
+    name: Frontend (lint + typecheck + unit + e2e + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -56,9 +56,14 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_c29sdmVuLWR1bW15LWtleQ"
+          CLERK_SECRET_KEY: "sk_test_c29sdmVuLWR1bW15LWtleQ"
           # valid-format dummy keys (base64url payload) — Clerk's key parser
           # decodes the payload, so "dummy" (5 chars) would crash the build
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_c29sdmVuLWR1bW15LWtleQ"

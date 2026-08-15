@@ -69,10 +69,9 @@
 
 | ข้อ | P | สถานะ |
 |---|---|---|
-| Unit (schema/permission/prompt/parser) | P0 | ✅ 146 pytest (backend) |
+| Unit (schema/permission/prompt/parser) | P0 | ✅ 146 pytest (backend) + 36 Vitest (frontend lib) |
 | Integration (auth/isolation/upload/audit) | P0 | ✅ test_tenant/test_billing/test_orgs |
-| E2E (Playwright) | P1 | ⬜ → workstream นี้ |
-| Frontend unit (Vitest) | P1 | ⬜ → workstream นี้ |
+| E2E (Playwright) | P1 | ✅ 4 smoke tests (demo mode, CI) — workflow create→approve→docs |
 | Sentry | P1 | ⬜ |
 | Structured logs + request-id | P0 | ✅ |
 | AI latency/token | P1 | 🔶 latency ✅ / token ⬜ |
