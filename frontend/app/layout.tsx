@@ -1,6 +1,7 @@
 import "./globals.css";
 import { ReactNode } from "react";
 import { Inter, Noto_Sans_Thai } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/ToastProvider";
@@ -13,6 +14,10 @@ const notoThai = Noto_Sans_Thai({
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://solven.example.com";
+
+// Demo mode bypasses Clerk entirely (same build-time constant as bffAuth.ts
+// and middleware.ts) — keyless demo builds must not mount ClerkProvider.
+const DEMO_MODE = process.env.NEXT_PUBLIC_SOLVEN_MODE === "demo";
 
 export const metadata = {
   metadataBase: new URL(SITE_URL),
@@ -95,7 +100,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body>
-        <ServiceWorkerRegister />
+        {DEMO_MODE ? (
+          <ServiceWorkerRegister />
+        ) : (
+          <ClerkProvider>
+            <ServiceWorkerRegister />
+          </ClerkProvider>
+        )}
         <ErrorBoundary>
           <ToastProvider>{children}</ToastProvider>
         </ErrorBoundary>

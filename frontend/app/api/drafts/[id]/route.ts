@@ -9,7 +9,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   // AUD-C-03: deny by default — production requires a verified principal.
-  const guard = requirePrincipal(req);
+  const guard = await requirePrincipal();
   if (!guard.ok) return guard.response;
 
   const { status } = (await req.json()) as { status: DraftStatus };

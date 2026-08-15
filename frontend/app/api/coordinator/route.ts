@@ -9,9 +9,9 @@ const VALID_AGENTS: AgentType[] = ["grading", "lesson-plan", "reporting"];
 
 export async function POST(req: NextRequest) {
   // AUD-C-03 / SEC-C-01: deny by default — production requires a verified
-  // principal (edge-injected header); the service token is never accepted
+  // principal (Clerk session); the service token is never accepted
   // from the browser.
-  const guard = requirePrincipal(req);
+  const guard = await requirePrincipal();
   if (!guard.ok) return guard.response;
   const principal = guard.principal;
 
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     input.trim(),
     rubric?.trim() || undefined,
     client_task_id || undefined,
-    principal // C2: forward the VERIFIED principal (edge-asserted), never a client value
+    principal // C2: forward the VERIFIED principal (Clerk-session-asserted), never a client value
   );
   if (!result.ok) {
     // AUD-H-02 / SEC-M-04: fail closed — backend failure is NOT a draft

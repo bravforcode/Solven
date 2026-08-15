@@ -28,6 +28,8 @@ export type RunResult =
 export interface BackendPrincipal {
   teacherId: string;
   tenant?: string;
+  role?: string;
+  orgName?: string;
 }
 
 /** Forward the verified BFF principal to the backend (server-to-server). */
@@ -37,6 +39,8 @@ function principalHeaders(principal?: BackendPrincipal): Record<string, string> 
     "x-solven-principal": principal.teacherId,
   };
   if (principal.tenant) headers["x-solven-tenant"] = principal.tenant;
+  if (principal.role) headers["x-solven-role"] = principal.role;
+  if (principal.orgName) headers["x-solven-org-name"] = principal.orgName;
   return headers;
 }
 

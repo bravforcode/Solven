@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   // AUD-C-03 / SEC-C-01: deny by default; production scopes drafts to the
   // authenticated teacher (AUD-H-01). Untagged drafts are never visible to
   // real principals — only the demo identity sees them.
-  const guard = requirePrincipal(req);
+  const guard = await requirePrincipal();
   if (!guard.ok) return guard.response;
 
   // T1-03 / AUD-H-06: the backend is the authoritative store. Merge backend

@@ -36,11 +36,11 @@ def _auth(principal=None, tenant=None):
     return headers
 
 
-def _submit(client, principal, agent="grading", rubric="เกณฑ์"):
+def _submit(client, principal, tenant=None, agent="grading", rubric="เกณฑ์"):
     return client.post(
         "/api/coordinator",
         json={"agent": agent, "input": "x", "rubric": rubric},
-        headers=_auth(principal),
+        headers=_auth(principal, tenant),
     )
 
 
@@ -90,6 +90,32 @@ def test_production_teacher_cannot_review_others_draft(monkeypatch, db_url, stor
     )
     assert r.status_code == 200
     assert r.json()["status"] == "approved"
+
+
+def test_production_same_teacher_cross_org_cannot_act(monkeypatch, db_url, store, prod_db_url):
+    """Org dimension of ownership: the same teacher in a different org cannot
+    act on a draft created under another org (design: 'a teacher can only
+    see/act on drafts inside their own org')."""
+    client = TestClient(_prod_app(monkeypatch, db_url, store, prod_db_url))
+    d = _submit(client, "teacher-a", tenant="org-1").json()
+
+    r = client.patch(
+        f"/api/drafts/{d['id']}",
+        json={"status": "approved"},
+        headers=_auth("teacher-a", "org-2"),
+    )
+    assert r.status_code == 403
+
+    r = client.delete(f"/api/drafts/{d['id']}", headers=_auth("teacher-a", "org-2"))
+    assert r.status_code == 403
+
+    # same teacher, same org → allowed
+    r = client.patch(
+        f"/api/drafts/{d['id']}",
+        json={"status": "approved"},
+        headers=_auth("teacher-a", "org-1"),
+    )
+    assert r.status_code == 200
 
 
 def test_production_replay_cannot_leak_another_teachers_draft(monkeypatch, db_url, store, prod_db_url):

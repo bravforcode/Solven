@@ -10,7 +10,7 @@ const API_TOKEN = process.env.SOLVEN_API_TOKEN ?? "";
 const VALID_KINDS = ["worksheet", "lesson-record", "official-letter", "certificate", "summary"];
 
 export async function POST(req: NextRequest) {
-  const guard = requirePrincipal(req);
+  const guard = await requirePrincipal();
   if (!guard.ok) return guard.response;
 
   // REVIEW F2: cap payload before parsing (memory/DoS guard)

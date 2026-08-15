@@ -51,6 +51,7 @@ class CoordState(TypedDict):
     passed: bool
     retries: int
     teacher_id: str | None
+    org_id: str | None
     engine: str
 
 
@@ -112,7 +113,8 @@ def make_coordinator(store: Store, fail_closed: bool = False):
                 "cost_estimate": 0.0 if model.startswith("mock") else 0.001,
                 "guardrail_passed": 0,  # set after guardrail node
                 "created_at": _now(),
-            }
+            },
+            org_id=state.get("org_id"),
         )
         return {
             **state,
@@ -157,6 +159,7 @@ def make_coordinator(store: Store, fail_closed: bool = False):
             warnings=state["warnings"],
             teacher_id=state.get("teacher_id"),
             status=status,
+            org_id=state.get("org_id"),
         )
         store.set_task_state(state["task_id"], "draft_ready")
         return {}
@@ -188,15 +191,16 @@ def run_task(
     client_task_id: str | None = None,
     fail_closed: bool = False,
     teacher_id: str | None = None,
+    org_id: str | None = None,
 ) -> dict:
     task_id = client_task_id or str(uuid.uuid4())
-    inserted = store.create_task(task_id, agent, user_input, teacher_id=teacher_id)
+    inserted = store.create_task(task_id, agent, user_input, teacher_id=teacher_id, org_id=org_id)
     if not inserted:
         # replayed request (e.g. offline-queue retry after reconnect) — return the
         # draft already produced instead of re-running the agent. The lookup is
-        # scoped to THIS teacher: a foreign task id must never leak another
+        # scoped to THIS teacher + org: a foreign task id must never leak another
         # teacher's draft (cross-tenant IDOR).
-        existing = [d for d in store.list_drafts(teacher_id=teacher_id) if d["task_id"] == task_id]
+        existing = [d for d in store.list_drafts(teacher_id=teacher_id, org_id=org_id) if d["task_id"] == task_id]
         if existing:
             return existing[0]
         task = store.get_task(task_id)
@@ -216,9 +220,10 @@ def run_task(
         "passed": True,
         "retries": 0,
         "teacher_id": teacher_id,
+        "org_id": org_id,
         # run_agent always overwrites with the actual engine before finalize
         "engine": "mock",
     }
     make_coordinator(store, fail_closed=fail_closed).invoke(state)
-    drafts = [d for d in store.list_drafts() if d["task_id"] == task_id]
+    drafts = [d for d in store.list_drafts(teacher_id=teacher_id, org_id=org_id) if d["task_id"] == task_id]
     return drafts[0]
