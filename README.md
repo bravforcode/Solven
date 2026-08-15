@@ -30,8 +30,8 @@ All agent output is draft-only until a teacher approves — no fully autonomous 
 
 | Layer | Now | Next |
 |---|---|---|
-| Web UI | Working prototype — Next.js 14 (App Router, TS) + coordinator route + 3 agents + approve/reject review queue + PWA manifest/SW; falls back to local mock if backend is down | Offline-first hardening, real-world pilot |
-| Backend | Working — Python FastAPI + LangGraph coordinator, 3 sub-agents, rule-based guardrail, SQLite audit log (`agent_runs`), LLM client with API/mock fallback, test suite green in CI (see below) | Thai open-source LLM self-host (target: Typhoon2), auth/RBAC |
+| Web UI | Working prototype — Next.js 14 (App Router, TS) + coordinator route + 3 agents + approve/reject review queue + Document Studio (PDF export, Thai font) + PWA manifest/SW; falls back to local mock only in demo mode | Offline-first hardening, real-world pilot |
+| Backend | Working — Python FastAPI + LangGraph coordinator, 3 sub-agents, rule-based guardrail + quarantine, Postgres audit log (`agent_runs`), Clerk auth + org multi-tenancy + Stripe billing, LLM client with API/mock fallback, 146 tests green in CI | Thai open-source LLM self-host (target: Typhoon2), RAG/document pipeline |
 | Docs | Problem brief + pitch-deck (10-slide PDF + generator) + target architecture (`docs/`) | — |
 
 The full production-grade target architecture is described in [docs/appendix-a-architecture.md](docs/appendix-a-architecture.md) — everything in the app entry is a *working prototype* of that target, with mock agent outputs until the backend is wired.
@@ -39,7 +39,7 @@ The full production-grade target architecture is described in [docs/appendix-a-a
 ## Tech Stack
 
 - **Frontend:** Next.js (App Router) + TypeScript
-- **Backend:** Python FastAPI + LangGraph (coordinator orchestration), SQLite
+- **Backend:** Python FastAPI + LangGraph (coordinator orchestration), PostgreSQL 16
 - **LLMs:** configurable — Anthropic/OpenAI API now; Thai open-source models for scale (see Appendix A)
 - **Integration target:** NDLP (K-12 channel) / AIS AISpace (teacher layer) / AIS Cloud (AIS EEC) — data residency in Thailand (sovereignty choice under PDPA)
 
@@ -47,9 +47,26 @@ The full production-grade target architecture is described in [docs/appendix-a-a
 
 ```
 frontend/            Next.js + TypeScript UI (working prototype)
-backend/             FastAPI + LangGraph services (in progress)
+backend/             FastAPI + LangGraph services (working, Postgres)
 docs/                problem brief, pitch-deck outline, target architecture
 ```
+
+## Documentation Index
+
+| Doc | เนื้อหา |
+|---|---|
+| [docs/product-brief.md](docs/product-brief.md) | สรุป product (ปัญหา/โซลูชัน/เป้าหมาย) |
+| [docs/architecture.md](docs/architecture.md) | สถาปัตยกรรมปัจจุบัน + contracts |
+| [docs/appendix-a-architecture.md](docs/appendix-a-architecture.md) | สถาปัตยกรรมเป้าหมาย production (A.1–A.12) |
+| [docs/architecture-decision-record.md](docs/architecture-decision-record.md) | ADR 13 ข้อ — ทำไมเลือก stack นี้ (รวม deviations จากโจทย์) |
+| [docs/repository-audit.md](docs/repository-audit.md) | Audit repo + dependency + known gaps |
+| [docs/feature-matrix.md](docs/feature-matrix.md) | สถานะฟีเจอร์เทียบ spec (P0–P3) |
+| [docs/security.md](docs/security.md) / [SECURITY.md](SECURITY.md) | โมเดลความปลอดภัย |
+| [docs/privacy.md](docs/privacy.md) | PDPA + data lifecycle |
+| [docs/demo-script.md](docs/demo-script.md) | สคริปต์ demo 5 นาที |
+| [docs/demo-data.md](docs/demo-data.md) / [docs/demo-fallback.md](docs/demo-fallback.md) | ข้อมูล demo + แผนสำรอง |
+| [docs/judging-checklist.md](docs/judging-checklist.md) | Checklist กรรมการ |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deploy/env/rollback |
 
 ## Getting Started
 
