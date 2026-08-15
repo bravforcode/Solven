@@ -25,7 +25,21 @@ export async function requirePrincipal(): Promise<
   if (DEMO_MODE) {
     return { ok: true, principal: { teacherId: "demo-teacher" } };
   }
-  const session = await auth();
+  let session;
+  try {
+    session = await auth();
+  } catch {
+    // Fail closed with a diagnosable signal when Clerk keys are missing or
+    // misconfigured in a non-demo deployment (defense-in-depth; the
+    // middleware would normally throw first).
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "auth misconfigured" },
+        { status: 503 }
+      ),
+    };
+  }
   if (!session.userId) {
     return {
       ok: false,
@@ -38,8 +52,10 @@ export async function requirePrincipal(): Promise<
     principal: {
       teacherId: session.userId,
       tenant: session.orgId ?? undefined,
-      role: (claims?.org_role as string) ?? undefined,
-      orgName: (claims?.org_name as string) ?? (claims?.org_slug as string) ?? undefined,
+      role: session.orgRole ?? undefined,
+      // org_name is a custom claim (not a standard Clerk claim); fall back to
+      // the typed org_slug when the template does not include it.
+      orgName: (claims?.org_name as string) ?? session.orgSlug ?? undefined,
     },
   };
 }

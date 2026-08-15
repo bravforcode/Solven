@@ -15,6 +15,10 @@ const notoThai = Noto_Sans_Thai({
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://solven.example.com";
 
+// Demo mode bypasses Clerk entirely (same build-time constant as bffAuth.ts
+// and middleware.ts) — keyless demo builds must not mount ClerkProvider.
+const DEMO_MODE = process.env.NEXT_PUBLIC_SOLVEN_MODE === "demo";
+
 export const metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
@@ -96,12 +100,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body>
-        <ClerkProvider>
+        {DEMO_MODE ? (
           <ServiceWorkerRegister />
-          <ErrorBoundary>
-            <ToastProvider>{children}</ToastProvider>
-          </ErrorBoundary>
-        </ClerkProvider>
+        ) : (
+          <ClerkProvider>
+            <ServiceWorkerRegister />
+          </ClerkProvider>
+        )}
+        <ErrorBoundary>
+          <ToastProvider>{children}</ToastProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

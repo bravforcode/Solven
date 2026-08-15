@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requirePrincipal } from "@/lib/bffAuth";
 
 // BFF proxy to the backend demo-seed endpoint (dev/demo only — the backend
@@ -11,7 +11,7 @@ const API_URL =
 
 const API_TOKEN = process.env.SOLVEN_API_TOKEN ?? "";
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   const guard = await requirePrincipal();
   if (!guard.ok) return guard.response;
 

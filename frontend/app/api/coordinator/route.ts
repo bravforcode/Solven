@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     input.trim(),
     rubric?.trim() || undefined,
     client_task_id || undefined,
-    principal // C2: forward the VERIFIED principal (edge-asserted), never a client value
+    principal // C2: forward the VERIFIED principal (Clerk-session-asserted), never a client value
   );
   if (!result.ok) {
     // AUD-H-02 / SEC-M-04: fail closed — backend failure is NOT a draft
