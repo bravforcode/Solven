@@ -3,6 +3,15 @@
 Client-side print is the primary path (works offline). This endpoint is an
 enhancement: when reportlab is unavailable the route returns 503 and the UI
 hides the download button — never a hard failure.
+
+Known limitations (review R2):
+- The vendored font is the variable NotoSansThai instanced at default axes
+  (wght=400); it covers Thai base+marks, Latin, digits and the punctuation
+  used by the templates (asserted by test_font_covers_required_glyphs).
+- reportlab does not apply OpenType GSUB/GPOS shaping: Thai combining marks
+  are emitted as separate glyphs with raw advances, so tone/vowel placement
+  is approximate. The browser print path (proper shaping) remains the
+  high-fidelity output.
 """
 
 import logging
