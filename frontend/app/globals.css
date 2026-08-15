@@ -781,22 +781,25 @@ button:disabled {
 
 .sidebar-link,
 .footer-link {
+  display: block;
+  padding: 5px 10px;
   font-size: 0.76rem;
   color: var(--muted);
   text-decoration: none;
+  border-radius: 6px;
+  line-height: 1.4;
+  transition: background 0.15s ease-out, color 0.15s ease-out;
 }
 
-.sidebar-link-active,
-.sidebar-link-active:hover {
+.sidebar-link:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.sidebar-link-active {
+  background: var(--surface-2);
   color: var(--primary);
   font-weight: 700;
-  text-decoration: none;
-}
-
-.sidebar-link:hover,
-.footer-link:hover {
-  color: var(--primary);
-  text-decoration: underline;
 }
 
 /* ---------- /about ---------- */
