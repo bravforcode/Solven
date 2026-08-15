@@ -10,6 +10,7 @@ import Checkbox from "@/components/ui/Checkbox";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import CommandPalette from "@/components/ui/CommandPalette";
 import Drawer from "@/components/ui/Drawer";
+import ProfileMenu from "@/components/ui/ProfileMenu";
 import { useToast, ToastType, ToastOptions } from "@/components/ui/ToastProvider";
 import { buildCommands, CommandItem } from "@/lib/commands";
 import { useSelection, useShortcuts, useMediaQuery } from "@/lib/hooks";
@@ -504,6 +505,29 @@ export default function Home() {
     setPresets(loadPresets());
   }, [loadDrafts]);
 
+  // Auto-seed demo data on first load in demo mode: the in-memory store
+  // resets on every server restart, so without this the queue opens as an
+  // empty dead end until the user finds the (hidden) seed button. The manual
+  // seed button stays as the explicit fallback. Never changes the current view.
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_SOLVEN_MODE !== "demo") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/demo/seed", { method: "POST" });
+        if (!res.ok) return;
+        const body = (await res.json()) as { seeded?: number };
+        if ((body.seeded ?? 0) > 0 && !cancelled) loadDrafts();
+      } catch {
+        // offline or backend down with local seed unavailable — the manual
+        // seed button in the empty state still covers this
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadDrafts]);
+
   /* ----- offline queue (Appendix A.8) ----- */
   const refreshQueuedCount = useCallback(async () => {
     setQueuedCount((await listQueuedTasks()).length);
@@ -963,7 +987,10 @@ export default function Home() {
   }
 
   /* ----- derived ----- */
-  const pendingCount = drafts.filter((d) => d.status === "pending").length;
+  // quarantined drafts are awaiting review too — count them as pending work
+  const pendingCount = drafts.filter(
+    (d) => d.status === "pending" || d.status === "quarantined"
+  ).length;
   const approvedCount = drafts.filter((d) => d.status === "approved").length;
   const rejectedCount = drafts.filter((d) => d.status === "rejected").length;
 
@@ -1092,7 +1119,7 @@ export default function Home() {
 
   const draftActions = (d: Draft) => (
     <>
-      {d.status === "pending" && (
+      {(d.status === "pending" || d.status === "quarantined") && (
         <>
           <Button
             size="sm"
@@ -1169,6 +1196,8 @@ export default function Home() {
           ? "badge-pending"
           : d.status === "approved"
           ? "badge-approved"
+          : d.status === "quarantined"
+          ? "badge-quarantined"
           : "badge-rejected"
       }`}
     >
@@ -1176,6 +1205,8 @@ export default function Home() {
         ? "รออนุมัติ"
         : d.status === "approved"
         ? "อนุมัติแล้ว"
+        : d.status === "quarantined"
+        ? "กักกัน (ตรวจ PII)"
         : "ปฏิเสธ"}
     </span>
   );
@@ -1245,9 +1276,7 @@ export default function Home() {
                 <kbd style={{ fontFamily: "inherit" }}>⌘K</kbd>
               </button>
             )}
-            <span className="avatar" title="ผู้ใช้ (ตัวอย่าง)" aria-hidden="true">
-              ท
-            </span>
+            <ProfileMenu />
           </div>
         </header>
 
@@ -1574,7 +1603,9 @@ export default function Home() {
                     ทุกงาน <span className="agent-strip-count">{drafts.length}</span>
                   </button>
                   {AGENT_OPTIONS.map((a) => {
-                    const count = drafts.filter((d) => d.agent === a && d.status === "pending").length;
+                    const count = drafts.filter(
+                      (d) => d.agent === a && (d.status === "pending" || d.status === "quarantined")
+                    ).length;
                     return (
                       <button
                         key={a}
@@ -1589,7 +1620,7 @@ export default function Home() {
                   })}
                 </div>
                 <div className="chip-row">
-                  {(["all", "pending", "approved", "rejected"] as StatusFilter[]).map((s) => (
+                  {(["all", "pending", "approved", "rejected", "quarantined"] as StatusFilter[]).map((s) => (
                     <button
                       key={s}
                       type="button"
@@ -1597,7 +1628,15 @@ export default function Home() {
                       aria-pressed={statusFilter === s}
                       onClick={() => setStatusFilter(s)}
                     >
-                      {s === "all" ? "ทั้งหมด" : s === "pending" ? "รออนุมัติ" : s === "approved" ? "อนุมัติแล้ว" : "ปฏิเสธ"}
+                      {s === "all"
+                        ? "ทั้งหมด"
+                        : s === "pending"
+                        ? "รออนุมัติ"
+                        : s === "approved"
+                        ? "อนุมัติแล้ว"
+                        : s === "quarantined"
+                        ? "กักกัน"
+                        : "ปฏิเสธ"}
                     </button>
                   ))}
                 </div>

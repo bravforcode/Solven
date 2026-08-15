@@ -696,6 +696,11 @@ button:disabled {
   color: var(--danger);
 }
 
+.badge-quarantined {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .badge-guardrail-ok {
   background: var(--ok-soft);
   color: var(--ok);
@@ -1698,3 +1703,54 @@ button:disabled {
   }
 }
 
+
+/* ============ Profile menu (avatar dropdown) ============ */
+.profile-menu { position: relative; }
+.profile-menu .avatar {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+.profile-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  z-index: 80;
+  animation: dropdown-in 0.15s ease-out;
+  overflow: hidden;
+}
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+}
+.avatar-lg { width: 44px; height: 44px; font-size: 1rem; }
+.profile-name { font-weight: 700; font-size: 0.92rem; color: var(--ink); }
+.profile-position { font-size: 0.78rem; color: var(--muted); }
+.profile-school { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+.profile-divider { height: 1px; background: var(--line); }
+.profile-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.85rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.profile-item:hover { background: var(--surface-2); }

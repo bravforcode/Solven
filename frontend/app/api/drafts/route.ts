@@ -3,6 +3,11 @@ import { listBackendDrafts } from "@/lib/backend";
 import { isDemoMode, requirePrincipal } from "@/lib/bffAuth";
 import { listDrafts } from "@/lib/store";
 
+// CRITICAL (2026-08-15): without this, Next.js 14 auto-static-caches the GET
+// handler and serves a stale [] snapshot forever (x-nextjs-cache: HIT) even
+// after drafts are created — the queue looks empty while data exists.
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   // AUD-C-03 / SEC-C-01: deny by default; production scopes drafts to the
   // authenticated teacher (AUD-H-01). Untagged drafts are never visible to

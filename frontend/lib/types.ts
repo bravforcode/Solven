@@ -1,6 +1,6 @@
 export type AgentType = "grading" | "lesson-plan" | "reporting";
 
-export type DraftStatus = "pending" | "approved" | "rejected";
+export type DraftStatus = "pending" | "approved" | "rejected" | "quarantined";
 
 export interface Draft {
   id: string;

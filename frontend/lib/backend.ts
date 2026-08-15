@@ -1,4 +1,5 @@
 import { AgentType, Draft } from "./types";
+import { runAgent as runMockAgent } from "./agents";
 
 // Try the real Solven backend first (Appendix A architecture). Production
 // (default) fails closed: backend errors surface as errors and never create a
@@ -142,67 +143,47 @@ export async function patchDraft(
 export async function listBackendDrafts(
   principal: BackendPrincipal
 ): Promise<Draft[]> {
-  const res = await fetch(`${API_URL}/api/drafts`, {
-    method: "GET",
-    headers: {
-      ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
-      ...principalHeaders(principal),
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) throw new Error(`backend ${res.status}`);
-  const rows = (await res.json()) as Array<{
-    id: string;
-    agent: AgentType;
-    input: string;
-    output: string;
-    status: Draft["status"];
-    warnings?: string[];
-    createdAt: string;
-  }>;
-  return rows.map((d) => ({
-    id: d.id,
-    agent: d.agent,
-    input: d.input,
-    output: d.output,
-    status: d.status,
-    warnings: d.warnings ?? [],
-    createdAt: d.createdAt,
-    engine: "backend" as const,
-    teacherId: principal.teacherId,
-  }));
+  try {
+    const res = await fetch(`${API_URL}/api/drafts`, {
+      method: "GET",
+      headers: {
+        ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+        ...principalHeaders(principal),
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) throw new Error(`backend ${res.status}`);
+    const rows = (await res.json()) as Array<{
+      id: string;
+      agent: AgentType;
+      input: string;
+      output: string;
+      status: Draft["status"];
+      warnings?: string[];
+      createdAt: string;
+    }>;
+    return rows.map((d) => ({
+      id: d.id,
+      agent: d.agent,
+      input: d.input,
+      output: d.output,
+      status: d.status,
+      warnings: d.warnings ?? [],
+      createdAt: d.createdAt,
+      engine: "backend" as const,
+      teacherId: principal.teacherId,
+    }));
+  } catch (err) {
+    // Demo mode tolerates backend absence (README: "falls back to local
+    // mock"): the route then serves local drafts instead of surfacing an
+    // error. Production still throws so the caller can fail closed (502).
+    if (DEMO_MODE) return [];
+    throw err;
+  }
 }
 
 export function localMock(agent: AgentType, input: string): string {
-  if (agent === "grading") {
-    return [
-      "คะแนนโดยประมาณ: 7.5/10",
-      "จุดเด่น: ตอบตรงคำถาม มีตัวอย่างประกอบ",
-      "ควรปรับปรุง: อธิบายเหตุผลรองรับคำตอบให้ละเอียดขึ้น",
-      "",
-      `(อ้างอิงจากคำตอบนักเรียน: "${truncate(input)}")`,
-    ].join("\n");
-  }
-  if (agent === "lesson-plan") {
-    return [
-      "แผนการสอน (ร่าง) — 50 นาที",
-      "1) นำเข้าสู่บทเรียน (10 นาที) — ตั้งคำถามกระตุ้นความสนใจ",
-      "2) กิจกรรมหลัก (25 นาที) — ให้นักเรียนลงมือทำโจทย์เป็นกลุ่ม",
-      "3) สรุปและประเมินผล (15 นาที) — quiz ท้ายชั่วโมง",
-      "",
-      `(อิงหัวข้อ/มาตรฐานที่ระบุ: "${truncate(input)}")`,
-    ].join("\n");
-  }
-  return [
-    "ร่างข้อความถึงผู้ปกครอง:",
-    `เรียนผู้ปกครอง ขอรายงานความก้าวหน้าของนักเรียนโดยสรุปดังนี้ — ${truncate(
-      input
-    )}`,
-    "",
-    "กรุณาตรวจทานก่อนส่งจริง (human-in-the-loop)",
-  ].join("\n");
-}
-
-function truncate(text: string, max = 120): string {
-  return text.length > max ? text.slice(0, max) + "…" : text;
+  // Single source of truth: the mock agents live in lib/agents.ts (swap each
+  // body for a real Claude/Gemini call when API keys are wired up).
+  return runMockAgent(agent, input);
 }
