@@ -52,3 +52,9 @@ class RunRecord(BaseModel):
     cost_estimate: float
     guardrail_passed: bool
     created_at: str
+
+
+class BillingWebhookEvent(BaseModel):
+    event_id: str
+    type: str
+    data: dict
