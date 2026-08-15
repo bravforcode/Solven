@@ -28,6 +28,64 @@ from app.demo_features import (
     rag_search,
     roster_default,
 )
+from app.demo_features_teaching import (
+    curriculum_map,
+    exam_runner,
+    homework_list,
+    media_library,
+    plc_feed,
+    research_list,
+    timetable,
+)
+from app.demo_features_student import (
+    guidance_log,
+    health_records,
+    iep_plans,
+    parent_portal,
+    scholarship_programs,
+    student_registry,
+)
+from app.demo_features_staff import (
+    budget_inventory,
+    facility_requests,
+    leave_requests,
+    library_books,
+    lunch_menu,
+    staff_list,
+    teacher_eval,
+)
+from app.demo_features_govdocs import (
+    doc_register,
+    edoc_workflow,
+    obec_reports,
+    procurement,
+)
+from app.demo_features_ai import (
+    behavior_insights,
+    essay_grade,
+    media_generate,
+    principal_dashboard,
+    reading_assess,
+    tutor_reply,
+)
+from app.demo_features_finance import (
+    coop_accounts,
+    finance_summary,
+    payroll,
+    promptpay_payload,
+    tuition_invoices,
+)
+from app.demo_features_community import (
+    bookings,
+    club_activities,
+    marketplace,
+    news_feed,
+    school_network,
+    sports_events,
+    student_badges,
+    surveys,
+    system_status,
+)
 from app.orgs import ensure_org_membership
 from app.principal import principal_from
 from app.seed import seed_demo
@@ -322,6 +380,239 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         """Mock notification feed (feature 3)."""
         _demo_only()
         return notifications()
+
+    # ------------------------------------------------------------------
+    # Extended demo endpoints (workstreams: teaching / student / staff /
+    # govdocs / ai / finance / community). All generators are
+    # deterministic mocks — dev/demo only, hard 404 in production.
+    # ------------------------------------------------------------------
+
+    # --- teaching ---
+    @app.get("/api/demo/timetable", dependencies=[require_token], tags=["demo"])
+    def demo_timetable():
+        _demo_only()
+        return timetable()
+
+    @app.get("/api/demo/homework", dependencies=[require_token], tags=["demo"])
+    def demo_homework():
+        _demo_only()
+        return homework_list()
+
+    @app.get("/api/demo/exam-runner", dependencies=[require_token], tags=["demo"])
+    def demo_exam_runner():
+        _demo_only()
+        return exam_runner()
+
+    @app.get("/api/demo/curriculum", dependencies=[require_token], tags=["demo"])
+    def demo_curriculum():
+        _demo_only()
+        return curriculum_map()
+
+    @app.get("/api/demo/plc", dependencies=[require_token], tags=["demo"])
+    def demo_plc():
+        _demo_only()
+        return plc_feed()
+
+    @app.get("/api/demo/research", dependencies=[require_token], tags=["demo"])
+    def demo_research():
+        _demo_only()
+        return research_list()
+
+    @app.get("/api/demo/media", dependencies=[require_token], tags=["demo"])
+    def demo_media():
+        _demo_only()
+        return media_library()
+
+    # --- student / parent ---
+    @app.get("/api/demo/parent-portal", dependencies=[require_token], tags=["demo"])
+    def demo_parent_portal():
+        _demo_only()
+        return parent_portal()
+
+    @app.get("/api/demo/registry", dependencies=[require_token], tags=["demo"])
+    def demo_registry():
+        _demo_only()
+        return student_registry()
+
+    @app.get("/api/demo/scholarship", dependencies=[require_token], tags=["demo"])
+    def demo_scholarship():
+        _demo_only()
+        return scholarship_programs()
+
+    @app.get("/api/demo/health", dependencies=[require_token], tags=["demo"])
+    def demo_health():
+        _demo_only()
+        return health_records()
+
+    @app.get("/api/demo/guidance", dependencies=[require_token], tags=["demo"])
+    def demo_guidance():
+        _demo_only()
+        return guidance_log()
+
+    @app.get("/api/demo/iep", dependencies=[require_token], tags=["demo"])
+    def demo_iep():
+        _demo_only()
+        return iep_plans()
+
+    # --- staff / admin ---
+    @app.get("/api/demo/staff", dependencies=[require_token], tags=["demo"])
+    def demo_staff():
+        _demo_only()
+        return staff_list()
+
+    @app.get("/api/demo/leaves", dependencies=[require_token], tags=["demo"])
+    def demo_leaves():
+        _demo_only()
+        return leave_requests()
+
+    @app.get("/api/demo/teacher-eval", dependencies=[require_token], tags=["demo"])
+    def demo_teacher_eval():
+        _demo_only()
+        return teacher_eval()
+
+    @app.get("/api/demo/budget", dependencies=[require_token], tags=["demo"])
+    def demo_budget():
+        _demo_only()
+        return budget_inventory()
+
+    @app.get("/api/demo/library", dependencies=[require_token], tags=["demo"])
+    def demo_library():
+        _demo_only()
+        return library_books()
+
+    @app.get("/api/demo/lunch", dependencies=[require_token], tags=["demo"])
+    def demo_lunch():
+        _demo_only()
+        return lunch_menu()
+
+    @app.get("/api/demo/facilities", dependencies=[require_token], tags=["demo"])
+    def demo_facilities():
+        _demo_only()
+        return facility_requests()
+
+    # --- gov docs ---
+    @app.get("/api/demo/doc-register", dependencies=[require_token], tags=["demo"])
+    def demo_doc_register():
+        _demo_only()
+        return doc_register()
+
+    @app.get("/api/demo/edoc-workflow", dependencies=[require_token], tags=["demo"])
+    def demo_edoc_workflow():
+        _demo_only()
+        return edoc_workflow()
+
+    @app.get("/api/demo/obec-reports", dependencies=[require_token], tags=["demo"])
+    def demo_obec_reports():
+        _demo_only()
+        return obec_reports()
+
+    @app.get("/api/demo/procurement", dependencies=[require_token], tags=["demo"])
+    def demo_procurement():
+        _demo_only()
+        return procurement()
+
+    # --- advanced AI ---
+    @app.post("/api/demo/essay-grade", dependencies=[require_token], tags=["demo"])
+    def demo_essay_grade(body: dict):
+        _demo_only()
+        return essay_grade(str(body.get("text") or ""))
+
+    @app.post("/api/demo/media-generate", dependencies=[require_token], tags=["demo"])
+    def demo_media_generate(body: dict):
+        _demo_only()
+        return media_generate(str(body.get("topic") or ""))
+
+    @app.get("/api/demo/reading", dependencies=[require_token], tags=["demo"])
+    def demo_reading():
+        _demo_only()
+        return reading_assess()
+
+    @app.get("/api/demo/behavior", dependencies=[require_token], tags=["demo"])
+    def demo_behavior():
+        _demo_only()
+        return behavior_insights()
+
+    @app.get("/api/demo/principal", dependencies=[require_token], tags=["demo"])
+    def demo_principal():
+        _demo_only()
+        return principal_dashboard()
+
+    @app.post("/api/demo/tutor-reply", dependencies=[require_token], tags=["demo"])
+    def demo_tutor_reply(body: dict):
+        _demo_only()
+        return tutor_reply(str(body.get("question") or ""), str(body.get("subject") or ""))
+
+    # --- finance ---
+    @app.get("/api/demo/tuition", dependencies=[require_token], tags=["demo"])
+    def demo_tuition():
+        _demo_only()
+        return tuition_invoices()
+
+    @app.post("/api/demo/promptpay", dependencies=[require_token], tags=["demo"])
+    def demo_promptpay(body: dict):
+        _demo_only()
+        return promptpay_payload(float(body.get("amount") or 0), str(body.get("ref") or ""))
+
+    @app.get("/api/demo/coop", dependencies=[require_token], tags=["demo"])
+    def demo_coop():
+        _demo_only()
+        return coop_accounts()
+
+    @app.get("/api/demo/payroll", dependencies=[require_token], tags=["demo"])
+    def demo_payroll():
+        _demo_only()
+        return payroll()
+
+    @app.get("/api/demo/finance-summary", dependencies=[require_token], tags=["demo"])
+    def demo_finance_summary():
+        _demo_only()
+        return finance_summary()
+
+    # --- community / misc ---
+    @app.get("/api/demo/network", dependencies=[require_token], tags=["demo"])
+    def demo_network():
+        _demo_only()
+        return school_network()
+
+    @app.get("/api/demo/marketplace", dependencies=[require_token], tags=["demo"])
+    def demo_marketplace():
+        _demo_only()
+        return marketplace()
+
+    @app.get("/api/demo/news", dependencies=[require_token], tags=["demo"])
+    def demo_news():
+        _demo_only()
+        return news_feed()
+
+    @app.get("/api/demo/clubs", dependencies=[require_token], tags=["demo"])
+    def demo_clubs():
+        _demo_only()
+        return club_activities()
+
+    @app.get("/api/demo/sports", dependencies=[require_token], tags=["demo"])
+    def demo_sports():
+        _demo_only()
+        return sports_events()
+
+    @app.get("/api/demo/bookings", dependencies=[require_token], tags=["demo"])
+    def demo_bookings():
+        _demo_only()
+        return bookings()
+
+    @app.get("/api/demo/surveys", dependencies=[require_token], tags=["demo"])
+    def demo_surveys():
+        _demo_only()
+        return surveys()
+
+    @app.get("/api/demo/badges", dependencies=[require_token], tags=["demo"])
+    def demo_badges():
+        _demo_only()
+        return student_badges()
+
+    @app.get("/api/demo/status", dependencies=[require_token], tags=["demo"])
+    def demo_status():
+        _demo_only()
+        return system_status()
 
     @app.get("/api/audit", dependencies=[require_token], tags=["api"])
     def audit(task_id: Optional[str] = None, request: Request = None,

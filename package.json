@@ -1,0 +1,24 @@
+{
+  "name": "teachops",
+  "version": "1.0.0",
+  "description": "Multi-agent AI system that gives Thai teachers their time back — automates grading, lesson planning, and parent/admin communication so teachers can focus on teaching.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bravforcode/Solven.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/bravforcode/Solven/issues"
+  },
+  "homepage": "https://github.com/bravforcode/Solven#readme"
+}

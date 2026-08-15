@@ -173,6 +173,41 @@ class OpenRouterLLM(OpenAILLM):
     model = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 
 
+class ThaiLLM(LLMClient):
+    """Self-hosted Thai LLM — Typhoon2-8B or OpenThaiGPT.
+
+    Supports local inference via Ollama, vLLM, or OpenAI-compatible API.
+    Data sovereignty: all student data stays in Thailand (AIS Cloud/EEC).
+    """
+
+    base_url = os.environ.get("THAI_LLM_BASE_URL", "http://localhost:11434/v1")
+    api_key_env = "THAI_LLM_API_KEY"
+    model = os.environ.get("THAI_LLM_MODEL", "typhoon2-8b")
+
+    def generate(self, system: str, user: str, temperature: float = 0.3) -> str:
+        key = os.environ.get(self.api_key_env, "ollama")
+        resp = _post_json_with_retry(
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": self.model,
+                "temperature": temperature,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            },
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        usage = payload.get("usage") or {}
+        self.last_usage = {
+            "input_tokens": usage.get("prompt_tokens"),
+            "output_tokens": usage.get("completion_tokens"),
+        }
+        return payload["choices"][0]["message"]["content"]
+
+
 class GeminiLLM(LLMClient):
     """Google Gemini generateContent API (no SDK dependency)."""
 
@@ -219,6 +254,7 @@ def get_llm() -> LLMClient:
         ("gemini", GeminiLLM, "GEMINI_API_KEY"),
         ("groq", GroqLLM, "GROQ_API_KEY"),
         ("openrouter", OpenRouterLLM, "OPENROUTER_API_KEY"),
+        ("thai", ThaiLLM, "THAI_LLM_API_KEY"),
     ]
     if override == "mock":
         return MockLLM()

@@ -773,6 +773,13 @@ button:disabled {
   text-decoration: none;
 }
 
+.sidebar-link-active,
+.sidebar-link-active:hover {
+  color: var(--primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .sidebar-link:hover,
 .footer-link:hover {
   color: var(--primary);
