@@ -2,7 +2,11 @@
 // slow/flaky connections (offline-first direction, Appendix A.8).
 // v2 (2026-08-15): bumped cache name + network-first shell so redeploys are
 // never stuck behind a stale cached HTML/CSS (the "broken CSS" symptom).
-const CACHE = "solven-v2";
+// v3 (2026-08-15): /_next/static switched to NETWORK-FIRST — cache-first
+// served stale JS chunks against fresh HTML (hydration mismatch "Expected
+// server HTML to contain a matching <span>"). Network-first with cache
+// fallback keeps offline support while guaranteeing chunk freshness.
+const CACHE = "solven-v3";
 const SHELL = ["/", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -27,17 +31,21 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   // API calls always go to network (never serve stale drafts)
   if (url.pathname.startsWith("/api/")) return;
-  // T1-06 (AUD-H-05): runtime-cache immutable Next.js build assets so a
-  // cold offline reload has the JS/CSS it needs to hydrate.
+  // T1-06 (AUD-H-05): runtime-cache Next.js build assets so a cold offline
+  // reload has the JS/CSS it needs to hydrate. NETWORK-FIRST: dev-mode chunk
+  // URLs are stable across edits, so cache-first can pair fresh HTML with
+  // stale JS (hydration failure). Fall back to cache only when offline.
   if (url.pathname.startsWith("/_next/static/")) {
     event.respondWith(
-      caches.open(CACHE).then(async (cache) => {
-        const hit = await cache.match(event.request);
-        if (hit) return hit;
-        const res = await fetch(event.request);
-        if (res.ok) cache.put(event.request, res.clone());
-        return res;
-      })
+      fetch(event.request)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(event.request, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(event.request))
     );
     return;
   }

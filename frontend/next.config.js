@@ -30,7 +30,17 @@ const nextConfig = {
   output: "standalone",
   poweredByHeader: false,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // Pages/SW/manifest must never be HTTP-cached: during a hackathon the
+      // build changes constantly, and a stale HTML response paired with fresh
+      // hashed JS breaks React hydration (runtime error, not a build error).
+      // Hashed /_next/static assets are excluded (immutable, content-hashed).
+      {
+        source: "/((?!_next/static|_next/image).*)",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+    ];
   },
 };
 

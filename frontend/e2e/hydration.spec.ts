@@ -39,3 +39,28 @@ test("avatar menu reflects saved school profile without errors", async ({ page }
   await expect(page.getByRole("menu")).toContainText("ครูสมชาย ทดสอบ");
   expect(errors).toEqual([]);
 });
+
+test("reload with active service worker has no hydration errors", async ({ page }) => {
+  // SW registers only in production builds (ServiceWorkerRegister gates on
+  // NODE_ENV) — against the dev server there is no SW, which is also the
+  // expected dev behavior. This test guards the PROD path in CI (built app).
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+
+  await page.goto("/");
+  await page.waitForTimeout(1500);
+  const swState = await page.evaluate(async () => {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    return reg ? { scope: reg.scope, active: reg.active?.state ?? null } : null;
+  });
+  if (swState) {
+    // SW active → second load goes through it (network-first static)
+    await page.reload({ waitUntil: "load" });
+    await page.waitForTimeout(1200);
+  }
+  await expect(page.locator(".content").first()).toBeVisible();
+  expect(errors.filter((e) => !e.includes("favicon"))).toEqual([]);
+});
