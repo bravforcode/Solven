@@ -9,8 +9,8 @@ const isDev = process.env.NODE_ENV !== "production";
 // function at all; dev additionally needs 'unsafe-eval' for webpack HMR.
 // (Nonce-based CSP is the proper hardening — see SECURITY.md.)
 const scriptSrc = isDev
-  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-  : "script-src 'self' 'unsafe-inline'";
+  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev"
+  : "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev";
 
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -20,8 +20,9 @@ const securityHeaders = [
   {
     key: "Content-Security-Policy",
     value:
-      `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline'; ` +
-      "img-src 'self' data:; font-src 'self' data:; connect-src 'self'",
+      `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev; ` +
+      "img-src 'self' data: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.dev; " +
+      "connect-src 'self' https://*.clerk.accounts.dev wss://*.clerk.accounts.dev; frame-src https://*.clerk.accounts.dev",
   },
 ];
 

@@ -12,7 +12,7 @@ const API_URL =
 const API_TOKEN = process.env.SOLVEN_API_TOKEN ?? "";
 
 export async function POST(req: NextRequest) {
-  const guard = requirePrincipal(req);
+  const guard = await requirePrincipal();
   if (!guard.ok) return guard.response;
 
   try {
@@ -23,6 +23,12 @@ export async function POST(req: NextRequest) {
         "x-solven-principal": guard.principal.teacherId,
         ...(guard.principal.tenant
           ? { "x-solven-tenant": guard.principal.tenant }
+          : {}),
+        ...(guard.principal.role
+          ? { "x-solven-role": guard.principal.role }
+          : {}),
+        ...(guard.principal.orgName
+          ? { "x-solven-org-name": guard.principal.orgName }
           : {}),
       },
       signal: AbortSignal.timeout(30000),

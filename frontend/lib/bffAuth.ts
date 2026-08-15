@@ -1,18 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
 // BFF identity guard (AUD-C-03 / SEC-C-01 / ARCH-03).
-//
-// ASSUMPTION (documented in docs/audits/2026-08-13/02_implementation_plan.md):
-// in production the app sits behind an identity-aware edge (OIDC/session proxy)
-// that sets `x-solven-principal` (teacher id) and optionally `x-solven-tenant`.
-// The edge MUST strip and re-assert these headers — the BFF never trusts
-// client-supplied values. In demo mode a fixed identity is used so local
-// development works without the edge.
+// Production: principal comes from the Clerk session (auth()), not from
+// client-supplied headers. Demo mode keeps the fixed local identity.
 const DEMO_MODE = process.env.NEXT_PUBLIC_SOLVEN_MODE === "demo";
 
 export interface Principal {
   teacherId: string;
   tenant?: string;
+  role?: string;
+  orgName?: string;
 }
 
 /** True when the local demo identity is in use (build-time constant). */
@@ -20,28 +18,28 @@ export function isDemoMode(): boolean {
   return DEMO_MODE;
 }
 
-export function requirePrincipal(req: NextRequest):
+export async function requirePrincipal(): Promise<
   | { ok: true; principal: Principal }
-  | { ok: false; response: NextResponse } {
+  | { ok: false; response: NextResponse }
+> {
   if (DEMO_MODE) {
     return { ok: true, principal: { teacherId: "demo-teacher" } };
   }
-  const teacherId = req.headers.get("x-solven-principal");
-  if (!teacherId || !teacherId.trim()) {
+  const session = await auth();
+  if (!session.userId) {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: "missing verified principal" },
-        { status: 401 }
-      ),
+      response: NextResponse.json({ error: "unauthenticated" }, { status: 401 }),
     };
   }
-  const tenant = req.headers.get("x-solven-tenant");
+  const claims = session.sessionClaims as Record<string, unknown> | null | undefined;
   return {
     ok: true,
     principal: {
-      teacherId: teacherId.trim(),
-      tenant: tenant?.trim() || undefined,
+      teacherId: session.userId,
+      tenant: session.orgId ?? undefined,
+      role: (claims?.org_role as string) ?? undefined,
+      orgName: (claims?.org_name as string) ?? (claims?.org_slug as string) ?? undefined,
     },
   };
 }

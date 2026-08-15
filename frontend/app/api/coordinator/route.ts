@@ -9,9 +9,9 @@ const VALID_AGENTS: AgentType[] = ["grading", "lesson-plan", "reporting"];
 
 export async function POST(req: NextRequest) {
   // AUD-C-03 / SEC-C-01: deny by default — production requires a verified
-  // principal (edge-injected header); the service token is never accepted
+  // principal (Clerk session); the service token is never accepted
   // from the browser.
-  const guard = requirePrincipal(req);
+  const guard = await requirePrincipal();
   if (!guard.ok) return guard.response;
   const principal = guard.principal;
 

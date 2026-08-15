@@ -1,6 +1,7 @@
 import "./globals.css";
 import { ReactNode } from "react";
 import { Inter, Noto_Sans_Thai } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/ToastProvider";
@@ -95,10 +96,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body>
-        <ServiceWorkerRegister />
-        <ErrorBoundary>
-          <ToastProvider>{children}</ToastProvider>
-        </ErrorBoundary>
+        <ClerkProvider>
+          <ServiceWorkerRegister />
+          <ErrorBoundary>
+            <ToastProvider>{children}</ToastProvider>
+          </ErrorBoundary>
+        </ClerkProvider>
       </body>
     </html>
   );
