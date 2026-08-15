@@ -8,6 +8,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Build-time mode: "demo" (default) bypasses Clerk/Stripe entirely so the
+# compose demo runs keyless; production builds pass NEXT_PUBLIC_SOLVEN_MODE=
+# (unset) plus real Clerk/Stripe keys.
+ARG NEXT_PUBLIC_SOLVEN_MODE=demo
+ENV NEXT_PUBLIC_SOLVEN_MODE=$NEXT_PUBLIC_SOLVEN_MODE
 RUN npm run build
 
 FROM node:20-alpine AS runner

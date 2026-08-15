@@ -148,6 +148,43 @@ def test_webhook_deleted_sets_canceled(monkeypatch, db_url, store, prod_db_url):
     assert sub["status"] == "canceled"
 
 
+def test_webhook_lazy_provisions_unprovisioned_org(monkeypatch, db_url, store, prod_db_url):
+    # Stripe events can arrive before the teacher's first coordinator call —
+    # the org row must be created (FK on subscriptions.org_id → orgs.id).
+    client = TestClient(_prod_app(monkeypatch, db_url, store, prod_db_url))
+    r = client.post(
+        "/api/internal/billing/webhook",
+        json={
+            "event_id": "evt_lazy",
+            "type": "customer.subscription.created",
+            "data": {
+                "org_id": "org-never-seen",
+                "stripe_sub_id": "sub_lazy",
+                "status": "active",
+                "period_end": "2026-09-01T00:00:00Z",
+                "plan": "pro",
+                "customer_id": "cus_lazy",
+                "org_name": "School Lazy",
+            },
+        },
+        headers=_auth(),
+    )
+    assert r.status_code == 200
+    assert r.json() == {"received": True}
+    with store._c() as conn:
+        org = conn.execute(
+            "SELECT name, plan FROM orgs WHERE id=%s", ("org-never-seen",)
+        ).fetchone()
+        sub = conn.execute(
+            "SELECT stripe_sub_id, status FROM subscriptions WHERE org_id=%s",
+            ("org-never-seen",),
+        ).fetchone()
+    assert org["name"] == "School Lazy"
+    assert org["plan"] == "pro"
+    assert sub["stripe_sub_id"] == "sub_lazy"
+    assert sub["status"] == "active"
+
+
 def test_webhook_without_org_id_skipped(monkeypatch, db_url, store, prod_db_url):
     client = TestClient(_prod_app(monkeypatch, db_url, store, prod_db_url))
     # non-subscription event (no stripe_sub_id required) with no org_id → skipped

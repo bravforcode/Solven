@@ -5,6 +5,8 @@ services:
       - POSTGRES_USER=solven
       - POSTGRES_PASSWORD=solven
       - POSTGRES_DB=solven
+    ports:
+      - "5432:5432"
     volumes:
       - solven-db:/var/lib/postgresql/data
     healthcheck:
@@ -34,7 +36,13 @@ services:
       retries: 5
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      # demo mode: keyless build — Clerk/Stripe bypassed (middleware,
+      # ClerkProvider, billing routes all no-op/503). Override with
+      # NEXT_PUBLIC_SOLVEN_MODE= + real keys for a production-style build.
+      args:
+        NEXT_PUBLIC_SOLVEN_MODE: demo
     depends_on:
       backend:
         condition: service_healthy

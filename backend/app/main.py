@@ -260,6 +260,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         org_id = data.get("org_id")
         if not org_id:
             return {"received": True, "skipped": "no org_id"}
+        # Lazy-provision the org row: Stripe events can arrive before the
+        # teacher's first coordinator call (checkout → webhook ordering),
+        # and upsert_subscription has an FK on orgs(id).
+        store.ensure_org(org_id, data.get("org_name") or org_id)
         if body.type in ("customer.subscription.created", "customer.subscription.updated"):
             store.upsert_subscription(
                 org_id,

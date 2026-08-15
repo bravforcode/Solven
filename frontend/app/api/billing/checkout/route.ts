@@ -29,7 +29,9 @@ export async function POST() {
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
       client_reference_id: principal.tenant,
-      subscription_data: { metadata: { org_id: principal.tenant, plan: "pro" } },
+      subscription_data: {
+        metadata: { org_id: principal.tenant, plan: "pro", org_name: principal.orgName ?? "" },
+      },
       success_url: `${siteUrl}/org?billing=success`,
       cancel_url: `${siteUrl}/org?billing=canceled`,
     });

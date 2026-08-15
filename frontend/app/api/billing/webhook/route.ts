@@ -51,6 +51,7 @@ export async function POST(req: Request) {
         status: sub.status,
         period_end: new Date((sub.items.data[0]?.current_period_end ?? 0) * 1000).toISOString(),
         plan: sub.metadata?.plan ?? null,
+        org_name: sub.metadata?.org_name ?? null,
         customer_id:
           typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null,
       },
