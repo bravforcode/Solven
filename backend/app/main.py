@@ -251,6 +251,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def render_doc(body: DocumentRenderRequest):
         from fastapi.responses import Response
 
+        # REVIEW F2: bounded payload (memory/DoS guard) — 200KB is generous
+        # for a Thai school document form.
+        if len(body.model_dump_json()) > 200_000:
+            raise HTTPException(413, "payload too large")
         try:
             pdf = render_document(body.kind, body.fields, body.school)
         except ValueError as exc:

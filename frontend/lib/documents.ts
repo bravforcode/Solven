@@ -52,9 +52,11 @@ export interface CertificateFields {
   date: string;
 }
 
-/** Escape HTML-sensitive characters (teacher-owned data, never raw-inject). */
+/** Escape HTML-sensitive characters (teacher-owned data, never raw-inject).
+ * Null/undefined-safe (REVIEW F5): localStorage tampering must not crash. */
 export function esc(text: string): string {
-  return text
+  const t = String(text ?? "");
+  return t
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -208,10 +210,15 @@ export function printDocument(html: string): void {
   root.id = "print-root";
   root.innerHTML = html;
   document.body.appendChild(root);
-  const after = () => {
+  const cleanup = () => {
     root.remove();
-    window.removeEventListener("afterprint", after);
+    window.removeEventListener("afterprint", cleanup);
   };
-  window.addEventListener("afterprint", after);
-  window.print();
+  window.addEventListener("afterprint", cleanup);
+  try {
+    window.print();
+  } finally {
+    // REVIEW F7: blocked/cancelled print must not leak #print-root
+    cleanup();
+  }
 }

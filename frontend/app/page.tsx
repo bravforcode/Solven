@@ -335,6 +335,8 @@ export default function Home() {
   }, []);
 
   const approvedDrafts = drafts.filter((d) => d.status === "approved");
+  // REVIEW F8: survive reload — backend presence also visible via draft engine
+  const hasBackend = engine === "backend" || drafts.some((d) => d.engine === "backend");
   const DOC_SOURCE_AGENT: Partial<Record<DocType, AgentType[]>> = {
     worksheet: ["grading"],
     "lesson-record": ["lesson-plan"],
@@ -350,13 +352,11 @@ export default function Home() {
     if (!d) return;
     setDocSourceId(id);
     if (docType === "worksheet") {
-      setDoc("subject", docFields.subject || "วิชา");
       setDoc("body", d.output);
     } else if (docType === "lesson-record") {
-      setDoc("subject", docFields.subject || "วิชา");
       setDoc("results", d.output);
     } else if (docType === "official-letter") {
-      setDoc("letterSubject", "รายงานความก้าวหน้านักเรียน");
+      setDoc("letterSubject", docFields.letterSubject || "รายงานความก้าวหน้านักเรียน");
       setDoc("body", d.output);
     } else if (docType === "certificate") {
       setDoc("detail", d.output);
@@ -447,14 +447,23 @@ export default function Home() {
 
   // consume "ทำเป็นเอกสาร" prefill from the queue when arriving at docs
   useEffect(() => {
-    if (view === "docs" && docPrefill) {
-      setDocType(docPrefill.type);
-      setDoc("body", docPrefill.content);
-      if (docPrefill.type === "official-letter")
-        setDoc("letterSubject", "รายงานความก้าวหน้านักเรียน");
-      setDocPrefill(null);
-    }
-  }, [view, docPrefill, setDoc]);
+    if (view !== "docs" || !docPrefill) return;
+    const p = docPrefill;
+    setDocType(p.type);
+    setDocFields((prev) => {
+      // REVIEW F1: field targeting must mirror applyDocSource — the
+      // lesson-record form renders `results`, not `body`
+      if (p.type === "lesson-record") return { ...prev, results: p.content };
+      if (p.type === "official-letter")
+        return {
+          ...prev,
+          letterSubject: prev.letterSubject || "รายงานความก้าวหน้านักเรียน",
+          body: p.content,
+        };
+      return { ...prev, body: p.content };
+    });
+    setDocPrefill(null);
+  }, [view, docPrefill]);
 
   const { push } = useToast();
   const pushToast = useCallback(
@@ -2002,7 +2011,7 @@ export default function Home() {
                   <Button type="button" onClick={handlePrintDoc}>
                     🖨 พิมพ์ / บันทึก PDF
                   </Button>
-                  {engine === "backend" && (
+                  {hasBackend && (
                     <Button type="button" variant="secondary" onClick={downloadPdf}>
                       ⬇ ดาวน์โหลด PDF (server)
                     </Button>

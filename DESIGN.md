@@ -62,3 +62,9 @@ ReactBits components remain vendored in `components/reactbits/` (MIT, `DavidHDev
 - `lib/commands.ts` (`buildCommands`/`filterCommands`) · `lib/hooks.ts` (`useSelection`, `useShortcuts`, `useMediaQuery`) · `lib/drafts.ts` (`patchDraftStatus` — รองรับ "pending" สำหรับ undo, `applyBatch`) · `lib/focus.ts` (focus trap + scroll lock)
 
 กฎเดิม (1-9) ยังคงมีผล; เพิ่ม: overlays ทุกตัวมี focus trap + scroll lock + Esc; batch selection ทำงานเฉพาะรายการ pending ที่แสดงอยู่; shortcuts ทำงานเฉพาะ desktop และข้ามเมื่อโฟกัสอยู่ในฟอร์ม.
+
+## Document Studio (15 Aug 2026 — v0.3)
+
+- View `docs` renders 5 print-ready Thai school documents (ใบงาน/บันทึกหลังสอน/หนังสือราชการ/เกียรติบัตร/รายงานสรุป) from `lib/documents.ts` pure builders.
+- `/settings` page persists school header info to `localStorage["solven.school"]` (via `lib/school.ts`).
+- Printing = `#print-root` + `@media print` (offline-capable); backend PDF via `/api/documents/render` (reportlab + vendored NotoSansThai) shown only when engine=backend.
