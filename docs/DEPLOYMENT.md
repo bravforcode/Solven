@@ -33,6 +33,9 @@ docker compose up --build -d
 > `-H "x-solven-principal: demo-teacher"`. ถ้าต้องการ demo แบบไม่ต้อง edge ให้ build
 > frontend ใหม่โดยตั้ง `NEXT_PUBLIC_SOLVEN_MODE=demo` (build-time) — อย่าใช้ mode นั้นกับ production
 
+> ℹ️ compose มี service `db` (Postgres 16) ให้แล้ว — backend ชี้
+> `postgresql://solven:solven@db:5432/solven` ผ่าน service DNS; ข้อมูลอยู่ใน volume `solven-db`
+
 ### 2b. แยก service (production จริง)
 
 ```bash
@@ -53,6 +56,26 @@ SOLVEN_API_TOKEN=<secret> \
 npm run start
 ```
 
+**Railway Postgres (production DB):**
+1. Railway → New Project → Provision PostgreSQL (region ไทย/ใกล้เคียง)
+2. ตั้ง `SOLVEN_DATABASE_URL` = Railway connection string (`postgresql://...`) — ต้องเป็น
+   hostname จริง (ไม่ใช่ localhost/127.0.0.1 — prod gate ปฏิเสธ)
+3. รัน migration ครั้งแรก: `python -m app.migrate` (idempotent — รันได้ทุก release)
+4. ตั้ง `SOLVEN_TEST_DATABASE_URL` แยก (หรือใช้ Railway ตัวเดียวกันกับ DB `solven_test`)
+
+### 2c. Local test setup (pytest กับ Postgres จริง)
+
+```bash
+docker compose up -d db          # Postgres 16 บน localhost:5432 (user/pass/db = solven)
+docker compose exec db psql -U solven -d solven -c "CREATE DATABASE solven_test;"
+cd backend
+$env:SOLVEN_TEST_DATABASE_URL="postgresql://solven:solven@localhost:5432/solven_test"
+.venv/Scripts/python -m pytest tests -q
+```
+
+> ถ้าใช้ Postgres บริการ Windows (พอร์ต 5434) ให้ชี้ `SOLVEN_TEST_DATABASE_URL` ไปพอร์ตนั้น
+> และ reset schema เมื่อ test isolation พัง: `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`
+
 ## 3. ตัวแปร environment (ทั้งหมด)
 
 | ตัวแปร | บังคับ | ค่าเริ่มต้น | คำอธิบาย |
@@ -61,29 +84,39 @@ npm run start
 | `SOLVEN_API_TOKEN` | ✅ prod | dev-secret-change-me | Bearer token ของ backend — **เปลี่ยนเสมอ** (prod: ≥32 chars, ห้าม default) |
 | `SOLVEN_RATE_LIMIT_PER_MIN` | – | 60 | requests/IP/min (ในหน่วยความจำ — เปลี่ยนเป็น Redis เมื่อหลาย instance) |
 | `SOLVEN_CORS_ORIGINS` | – | http://localhost:3000 | origin ที่ browser เรียกได้ (comma-separated; prod ห้าม localhost) |
-| `SOLVEN_DB_PATH` | – | backend/data/solven.db | path ฐานข้อมูล |
+| `SOLVEN_DB_PATH` | – | backend/data/solven.db | path ฐานข้อมูล (SQLite; production ใช้ `SOLVEN_DATABASE_URL` แทน) |
+| `SOLVEN_DATABASE_URL` | ✅ prod | – | PostgreSQL URL (production บังคับ — prod gate ปฏิเสธ localhost/127.0.0.1) |
+| `SOLVEN_TEST_DATABASE_URL` | – | – | PostgreSQL URL สำหรับ pytest (ต้องมี DB `solven_test` — ดู §2c) |
 | `SOLVEN_LLM` | – | mock | mock / auto / anthropic / openai (prod ห้าม mock) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | ตาม LLM | – | key ของ provider |
 | `NEXT_PUBLIC_SOLVEN_API_URL` (frontend) | ✅ | localhost:8000 | URL backend จากมุมมอง Next.js server |
 | `SOLVEN_API_TOKEN` (frontend) | ✅ | – | token ส่งต่อจาก Next.js server → backend (ไม่รั่วถึง browser) |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (frontend) | ✅ prod | – | publishable key จาก dashboard.clerk.com (build-time) |
+| `CLERK_SECRET_KEY` (frontend) | ✅ prod | – | secret key จาก dashboard.clerk.com (server-only) |
+| `STRIPE_SECRET_KEY` (frontend) | ✅ prod | – | Stripe test/live secret key (server-only) |
+| `STRIPE_WEBHOOK_SECRET` (frontend) | ✅ prod | – | webhook signing secret (`whsec_...`) สำหรับ `/api/billing/webhook` |
+| `STRIPE_PRICE_ID` (frontend) | ✅ prod | – | price id ของ subscription "pro" (`price_...`) |
 
 ## 4. Identity edge contract (production จำเป็น)
 
-Production ใช้ **BFF deny-by-default + edge-injected principal** (AUD-C-03 / ARCH-03):
+Production ใช้ **BFF deny-by-default + Clerk session** (AUD-C-03 / ARCH-03):
 
-- หน้า app ต้องอยู่หลัง identity-aware edge (OIDC/session proxy) ที่ยืนยันตัวตนครู แล้ว
-  **set header** ต่อไปนี้ทุก request (server-to-server ไปยัง Next BFF → FastAPI):
-  - `x-solven-principal` = teacher id (บังคับใน production — ไม่มี → 401)
-  - `x-solven-tenant` = school/tenant id (optional)
-- **edge MUST strip และ re-assert** header เหล่านี้ — ห้ามให้ client ตั้งเองได้
-  (ไม่งั้น impersonation ได้เต็มรูปแบบ)
-- BFF/backend ไม่ trust ค่า client ที่ส่งมา; forward เฉพาะค่า edge ที่ verify แล้ว
-- **offline queue (SW flush) ใช้ได้กับ edge แบบ cookie/session เท่านั้น** — SW fetch
-  same-origin จะส่ง cookie ไปด้วย แล้ว edge inject `x-solven-principal` ได้;
-  ถ้า edge เป็น token-only (ไม่มี cookie) → offline queue จะ flush ไม่ได้ (401 ทุกรอบ)
-  ให้ปิด offline queue ในการตั้งค่าแบบนั้น
+- หน้า app อยู่หลัง Clerk (Next.js middleware `auth().protect()`) — ตัวตนครูมาจาก
+  **Clerk session** ที่ BFF อ่าน (`lib/bffAuth.ts` → `requirePrincipal()`)
+- BFF **inject header** ต่อไปนี้ทุก request (server-to-server ไปยัง FastAPI):
+  - `x-solven-principal` = teacher id (Clerk `userId` — บังคับใน production — ไม่มี → 401)
+  - `x-solven-tenant` = org id (Clerk `orgId` — optional)
+  - `x-solven-role` = org role (`org_role` claim — owner/admin/teacher)
+  - `x-solven-org-name` = org display name (`org_name` claim, fallback `org_slug`)
+- **backend MUST strip และ re-assert** header เหล่านี้ — ห้าม trust ค่า client ที่ส่งมา
+  (ไม่งั้น impersonation ได้เต็มรูปแบบ); production backend อ่านจาก header ที่ BFF
+  inject เท่านั้น และ 401 เมื่อ principal ว่าง
+- BFF ไม่ trust ค่า client ที่ส่งมา; principal มาจาก Clerk session ที่ verify แล้ว
+- **offline queue (SW flush) ใช้ได้กับ Clerk session cookie เท่านั้น** — SW fetch
+  same-origin จะส่ง cookie ไปด้วย แล้ว middleware/BFF อ่าน session ได้;
+  ถ้า session หมดอายุ → offline queue จะ flush ไม่ได้ (401 ทุกรอบ)
 - demo/dev (NEXT_PUBLIC_SOLVEN_MODE=demo, SOLVEN_ENV=dev) ใช้ identity คงที่ `demo-teacher`
-  — ไม่ต้องมี edge
+  — ไม่ต้องมี Clerk keys (middleware + ClerkProvider ถูก bypass ทั้งหมด)
 - Release gate: ทดสอบว่าส่ง request ไม่มี `x-solven-principal` ใน production → 401 ทุกรอบ
 
 ## 5. Checklist ก่อน production
@@ -107,4 +140,25 @@ Production ใช้ **BFF deny-by-default + edge-injected principal** (AUD-C-03
 
 ## 7. CI/CD
 
-`.github/workflows/ci.yml` รันทุก push/PR: backend pytest (32 tests) + frontend lint/typecheck/build
+`.github/workflows/ci.yml` รันทุก push/PR: backend pytest (Postgres service) + frontend lint/typecheck/build (dummy Clerk keys)
+
+## 8. Manual verification runbook (Clerk + Stripe test mode)
+
+ต้องมีคนที่มี access dashboard (Clerk + Stripe test mode) — ตามลำดับ:
+
+1. **Sign-up**: เปิด `/sign-up` → สมัครด้วย email หรือ Google → กลับมาที่หน้าแรก
+2. **Create org**: เปิด `/org` → สร้าง org (ชื่อโรงเรียน) → ระบบ provision org/member
+   (lazy — ครั้งแรกที่ BFF เรียก backend)
+3. **Invite**: Clerk dashboard → invite อีก email → สมัคร/accept → เข้า org เดียวกัน
+4. **Cross-org draft visibility**: สร้าง draft ใน org A → สลับ org (OrganizationSwitcher)
+   → ตรวจว่าไม่เห็น draft ของ org A (teacher+org scoping)
+5. **Stripe test-mode checkout**: `/org` → กด upgrade → Stripe Checkout (บัตรทดสอบ
+   `4242 4242 4242 4242`) → กลับมาที่ `/org?billing=success`
+6. **Webhook → subscriptions**: Stripe dashboard → Events → ตรวจ `customer.subscription.created`
+   ถูกส่งไป `/api/billing/webhook` (ตั้ง endpoint + `whsec_...`) → backend
+   `subscriptions` table มีแถวใหม่ (org_id + stripe_sub_id + status=active)
+7. **Quota block**: ใช้ draft เกิน quota ของ plan (trial=50) → backend ตอบ 402
+   `quota exceeded` → UI แสดงข้อความ upgrade
+8. **Portal plan change**: `/org` → Billing portal → เปลี่ยน plan/cancel → Stripe ส่ง
+   `customer.subscription.updated/deleted` → webhook → `subscriptions` table อัปเดต
+   (dedup ด้วย event id — ส่งซ้ำไม่สร้างแถวใหม่)

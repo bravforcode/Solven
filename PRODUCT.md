@@ -14,7 +14,7 @@
 - รอง: ผู้บริหารสถานศึกษา/เขตพื้นที่ (ผู้รับรายงาน)
 
 ## Solution
-Coordinator + 3 sub-agents (Grading & Feedback / Lesson-Plan / Reporting & Communication) + guardrail agent; human-in-the-loop ทุกผลลัพธ์; audit log ทุก agent call; ข้อมูลอยู่ในไทย (AIS Cloud/EEC — data sovereignty, PDPA-ready); offline-first PWA; LLM เปิดทาง self-host Thai model (Typhoon2/SeaLLM) เพื่อต้นทุนต่ำ + data sovereignty
+Coordinator + 3 sub-agents (Grading & Feedback / Lesson-Plan / Reporting & Communication) + guardrail agent; human-in-the-loop ทุกผลลัพธ์; audit log ทุก agent call; ข้อมูลอยู่ในไทย (AIS Cloud/EEC — data sovereignty, PDPA-ready); offline-first PWA; LLM เปิดทาง self-host Thai model (Typhoon2/SeaLLM) เพื่อต้นทุนต่ำ + data sovereignty; multi-tenant org (Clerk) + role-scoped access (owner/admin/teacher) + Stripe subscription billing พร้อม usage quota (Postgres)
 
 ## Mode (ต่อ surface)
 - Prototype UI (web app สำหรับครู): **Operate** — ใช้งานจริง ต้อง scanability + human-in-the-loop queue ชัดเจน
@@ -27,5 +27,4 @@ Coordinator + 3 sub-agents (Grading & Feedback / Lesson-Plan / Reporting & Commu
 
 ## Non-goals (ตอนนี้)
 - ไม่ทำ autonomous grading/ส่งข้อความอัตโนมัติโดยไม่มีครูอนุมัติ
-- ไม่ทำระบบ e-commerce/บิลลิง
 - ไม่ทำ native mobile app (PWA ก่อน)
