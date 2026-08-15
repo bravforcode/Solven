@@ -24,7 +24,7 @@ def _hash(text: str) -> str:
 
 
 # (agent, input, output, status, warnings, reviewed_by, age_days, guardrail_passed)
-# 18 rows — every agent x every status, plus approved drafts for every agent
+# 19 rows — every agent x every status, plus approved drafts for every agent
 # so the Document Studio has sources for all 4 doc types (worksheet /
 # lesson-record / official-letter / certificate).
 _DEMO_DRAFTS: list[tuple] = [

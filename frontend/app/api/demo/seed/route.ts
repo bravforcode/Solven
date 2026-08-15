@@ -30,7 +30,7 @@ interface LocalSeedRow {
   warnings: string[];
 }
 
-// Mirror of backend/app/seed.py _DEMO_DRAFTS (18 rows, all 4 statuses, every
+// Mirror of backend/app/seed.py _DEMO_DRAFTS (19 rows, all 4 statuses, every
 // agent has approved drafts so the Document Studio has sources for all types).
 const LOCAL_DEMO_DRAFTS: LocalSeedRow[] = [
   {
