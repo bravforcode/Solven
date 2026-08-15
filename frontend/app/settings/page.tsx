@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { loadSchool, saveSchool, SchoolInfo } from "@/lib/school";
+import { useEffect, useState } from "react";
+import { loadSchool, saveSchool, SCHOOL_DEFAULTS, SchoolInfo } from "@/lib/school";
 // REVIEW PASS 2: layout.tsx already wraps every page in ToastProvider —
 // consume useToast() directly, do NOT add a second provider
 import { useToast } from "@/components/ui/ToastProvider";
@@ -22,7 +22,13 @@ const FIELDS: { key: keyof SchoolInfo; label: string; hint?: string }[] = [
 
 function SettingsForm() {
   const { push } = useToast();
-  const [info, setInfo] = useState<SchoolInfo>(() => loadSchool());
+  // Hydration-safe: render defaults first, sync stored profile after mount
+  // (reading localStorage during render breaks SSR/client equality).
+  const [info, setInfo] = useState<SchoolInfo>(SCHOOL_DEFAULTS);
+
+  useEffect(() => {
+    setInfo(loadSchool());
+  }, []);
 
   const set = (key: keyof SchoolInfo, value: string) =>
     setInfo((prev) => ({ ...prev, [key]: value }));

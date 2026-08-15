@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { loadSchool } from "@/lib/school";
+import { loadSchool, SCHOOL_DEFAULTS, SchoolInfo } from "@/lib/school";
 
 /** Thai-style initials: first 2 characters of the name (ignoring spaces). */
 function initials(name: string): string {
@@ -14,11 +14,19 @@ function initials(name: string): string {
  * Teacher avatar + profile menu. Reads the school profile (localStorage via
  * lib/school) — the same source the document header uses, so the menu always
  * reflects what the teacher saved in /settings.
+ *
+ * Hydration-safe: localStorage is never read during render (SSR output would
+ * differ from the client's stored profile and break React hydration). We
+ * render SCHOOL_DEFAULTS first and sync the stored profile after mount.
  */
 export default function ProfileMenu() {
   const [open, setOpen] = useState(false);
+  const [school, setSchool] = useState<SchoolInfo>(SCHOOL_DEFAULTS);
   const ref = useRef<HTMLDivElement>(null);
-  const school = loadSchool();
+
+  useEffect(() => {
+    setSchool(loadSchool());
+  }, []);
 
   useEffect(() => {
     if (!open) return;
