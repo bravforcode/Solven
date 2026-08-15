@@ -1,9 +1,13 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 // BFF identity guard (AUD-C-03 / SEC-C-01 / ARCH-03).
 // Production: principal comes from the Clerk session (auth()), not from
 // client-supplied headers. Demo mode keeps the fixed local identity.
+//
+// CRITICAL: Clerk is lazy-imported to avoid crashing serverless functions
+// (Vercel) that lack CLERK_SECRET_KEY in demo/keyless builds.  The top-level
+// import of `@clerk/nextjs/server` throws at module-load time when the
+// secret key env var is absent.
 const DEMO_MODE = process.env.NEXT_PUBLIC_SOLVEN_MODE === "demo";
 
 export interface Principal {
@@ -25,6 +29,9 @@ export async function requirePrincipal(): Promise<
   if (DEMO_MODE) {
     return { ok: true, principal: { teacherId: "demo-teacher" } };
   }
+  // Lazy import — only loaded in production (non-demo) builds where
+  // CLERK_SECRET_KEY is guaranteed to be set.
+  const { auth } = await import("@clerk/nextjs/server");
   let session;
   try {
     session = await auth();
