@@ -5,6 +5,8 @@ services:
       - POSTGRES_USER=solven
       - POSTGRES_PASSWORD=solven
       - POSTGRES_DB=solven
+    ports:
+      - "5432:5432"
     volumes:
       - solven-db:/var/lib/postgresql/data
     healthcheck:
