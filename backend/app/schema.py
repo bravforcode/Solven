@@ -38,6 +38,12 @@ class PatchDraft(BaseModel):
     status: DraftStatus
 
 
+class DocumentRenderRequest(BaseModel):
+    kind: str
+    fields: dict = {}
+    school: dict = {}
+
+
 class RunRecord(BaseModel):
     """One row of the agent_runs audit table."""
 
