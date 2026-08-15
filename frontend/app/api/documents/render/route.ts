@@ -13,6 +13,12 @@ export async function POST(req: NextRequest) {
   const guard = requirePrincipal(req);
   if (!guard.ok) return guard.response;
 
+  // REVIEW F2: cap payload before parsing (memory/DoS guard)
+  const contentLength = Number(req.headers.get("content-length") ?? 0);
+  if (contentLength > 1_000_000) {
+    return NextResponse.json({ error: "payload too large" }, { status: 413 });
+  }
+
   const body = await req.json();
   const { kind, fields, school } = body as {
     kind?: string;
@@ -51,7 +57,9 @@ export async function POST(req: NextRequest) {
       } catch {
         /* non-JSON error body — keep status */
       }
-      return NextResponse.json({ error: detail }, { status: 502 });
+      // REVIEW F4: preserve backend 4xx (validation/auth); 5xx → 502
+      const status = res.status < 500 ? res.status : 502;
+      return NextResponse.json({ error: detail }, { status });
     }
     const pdf = await res.arrayBuffer();
     return new NextResponse(pdf, {

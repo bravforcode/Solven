@@ -66,12 +66,11 @@ def test_render_certificate_landscape(client):
     assert r.content.startswith(b"%PDF")
 
 
-def test_render_includes_school_name(client):
-    """REVIEW FIX 1: school must reach the PDF, not vanish in the BFF chain.
-
-    The Thai font is only registered/used when the header flow runs — its
-    BaseFont name appears literally in the PDF resource dictionaries.
-    """
+def test_render_embeds_thai_font(client):
+    """Smoke: Thai font is registered and embedded (CID-subset PDFs cannot be
+    text-searched). The school-header flow itself is covered end-to-end by the
+    BFF contract (route forwards `school` verbatim) + manual E2E check — this
+    test guards the renderer/font pipeline, not the header content."""
     r = client.post(
         "/api/documents/render",
         headers=auth(),
@@ -83,6 +82,68 @@ def test_render_includes_school_name(client):
     )
     assert r.status_code == 200
     assert b"NotoSansThai" in r.content
+
+
+def test_render_official_letter_smoke(client):
+    """F10: most markup-heavy kind (`<b>`/`<br/>` structural tags)."""
+    r = client.post(
+        "/api/documents/render",
+        headers=auth(),
+        json={
+            "kind": "official-letter",
+            "school": {"schoolName": "โรงเรียนบ้านสวนฝั่งสุข", "refNo": "12/2569"},
+            "fields": {
+                "refNo": "",
+                "date": "15 ส.ค. 2569",
+                "subject": "รายงานความก้าวหน้า",
+                "to": "ผู้ปกครอง",
+                "body": "เด็กดีขึ้นมาก",
+                "teacherName": "นางสาวสมหญิง",
+                "position": "ครูผู้สอน",
+            },
+        },
+    )
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
+
+
+def test_render_lesson_record_smoke(client):
+    """F10: table layout kind."""
+    r = client.post(
+        "/api/documents/render",
+        headers=auth(),
+        json={
+            "kind": "lesson-record",
+            "fields": {
+                "subject": "คณิตศาสตร์",
+                "unit": "เศษส่วน",
+                "grade": "ป.5",
+                "students": "30",
+                "date": "15 ส.ค. 2569",
+                "indicators": "ค 1.1",
+                "results": "นักเรียนเข้าใจ",
+                "problems": "เวลาน้อย",
+                "fixes": "แบ่งกลุ่ม",
+                "teacherName": "นางสาวสมหญิง",
+            },
+        },
+    )
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
+
+
+def test_render_summary_smoke(client):
+    """F10: summary kind (multi-draft body)."""
+    r = client.post(
+        "/api/documents/render",
+        headers=auth(),
+        json={
+            "kind": "summary",
+            "fields": {"body": "งานที่ 1 ...\n\nงานที่ 2 ..."},
+        },
+    )
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
 
 
 def test_render_escapes_markup_in_body(client):
